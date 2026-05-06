@@ -18,6 +18,7 @@ saves/
 temp/
 *.gfve
 *.log
+resources/ffmpeg/*.exe
 *.mp4
 *.mkv
 *.mov

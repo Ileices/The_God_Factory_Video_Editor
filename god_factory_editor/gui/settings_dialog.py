@@ -187,6 +187,17 @@ class SettingsDialog(QDialog):
         self._ffmpeg_status = QLabel("")
         form.addRow(check_btn, self._ffmpeg_status)
 
+        self._ffmpeg_auto_bootstrap_chk = QCheckBox("Auto-install/update bundled FFmpeg on launch")
+        self._ffmpeg_auto_bootstrap_chk.setChecked(settings.get("ffmpeg_auto_bootstrap_on_launch", True))
+        form.addRow("FFmpeg bootstrap:", self._ffmpeg_auto_bootstrap_chk)
+
+        self._ffmpeg_url_edit = QLineEdit(settings.get("ffmpeg_download_url", ""))
+        form.addRow("FFmpeg zip URL:", self._ffmpeg_url_edit)
+
+        ffmpeg_update_btn = QPushButton("Install / Update FFmpeg Now")
+        ffmpeg_update_btn.clicked.connect(self._install_or_update_ffmpeg)
+        form.addRow(ffmpeg_update_btn)
+
         self._repo_url_edit = QLineEdit(settings.get("repo_url", ""))
         form.addRow("Git repo URL:", self._repo_url_edit)
 
@@ -208,6 +219,9 @@ class SettingsDialog(QDialog):
         form.addRow("Clone destination:", clone_row)
 
         update_row = QHBoxLayout()
+        status_btn = QPushButton("Check Update Status")
+        status_btn.clicked.connect(self._check_update_status)
+        update_row.addWidget(status_btn)
         clone_btn = QPushButton("Clone Latest Source")
         clone_btn.clicked.connect(self._clone_repo)
         update_row.addWidget(clone_btn)
@@ -232,7 +246,10 @@ class SettingsDialog(QDialog):
         settings.set("export_preset",      self._preset_combo.currentData())
         settings.set("repo_url",           self._repo_url_edit.text().strip())
         settings.set("repo_auto_update_on_launch", self._auto_update_chk.isChecked())
+        settings.set("repo_auto_check_on_launch", True)
         settings.set("repo_clone_target_dir", self._clone_target_edit.text().strip())
+        settings.set("ffmpeg_auto_bootstrap_on_launch", self._ffmpeg_auto_bootstrap_chk.isChecked())
+        settings.set("ffmpeg_download_url", self._ffmpeg_url_edit.text().strip())
 
         shortcuts = {k: e.keySequence().toString() for k, e in self._key_edits.items()}
         settings.set("shortcuts", shortcuts)
@@ -269,6 +286,13 @@ class SettingsDialog(QDialog):
         if ok:
             QMessageBox.information(self, "Update Pulled", msg)
 
+    def _check_update_status(self):
+        self._apply()
+        from god_factory_editor.core.update_manager import UpdateManager
+        ok, msg = UpdateManager().remote_status()
+        self._repo_status.setText(msg)
+        self._repo_status.setStyleSheet("color: #3fb950;" if ok else "color: #f85149;")
+
     def _clone_repo(self):
         self._apply()
         from pathlib import Path
@@ -279,3 +303,12 @@ class SettingsDialog(QDialog):
         self._repo_status.setStyleSheet("color: #3fb950;" if ok else "color: #f85149;")
         if ok:
             QMessageBox.information(self, "Clone Complete", msg)
+
+    def _install_or_update_ffmpeg(self):
+        self._apply()
+        from god_factory_editor.core.ffmpeg_manager import FFmpegManager
+        ok, msg = FFmpegManager().install_or_update()
+        self._ffmpeg_status.setText(msg)
+        self._ffmpeg_status.setStyleSheet("color: #3fb950;" if ok else "color: #f85149;")
+        if ok:
+            QMessageBox.information(self, "FFmpeg Updated", msg)

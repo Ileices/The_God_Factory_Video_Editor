@@ -65,7 +65,10 @@ DEFAULTS = {
     "volume": 0.80,
     "repo_url": "https://github.com/Ileices/The_God_Factory_Video_Editor.git",
     "repo_auto_update_on_launch": False,
+    "repo_auto_check_on_launch": True,
     "repo_clone_target_dir": str(Path.home() / "Documents"),
+    "ffmpeg_auto_bootstrap_on_launch": True,
+    "ffmpeg_download_url": "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip",
     "shortcuts": {
         "play_pause": "Space",
         "mark_in": "I",

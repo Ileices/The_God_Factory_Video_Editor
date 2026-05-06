@@ -689,6 +689,40 @@ _TOPICS: list[dict] = [
         """,
     },
     {
+        "id": "updates",
+        "title": "App and FFmpeg Updates",
+        "content": """
+        <h2>App and FFmpeg Updates</h2>
+        <p>You can now keep source installs up to date directly from inside the app.</p>
+
+        <h3>Source code updates (Git)</h3>
+        <ul>
+          <li>Open <b>Settings → Tools &amp; FFmpeg</b></li>
+          <li>Use <b>Check Update Status</b> to compare local branch vs remote</li>
+          <li>Use <b>Pull Latest Updates Now</b> for an immediate fast-forward update</li>
+          <li>Optional: enable <b>Pull latest updates on launch</b></li>
+        </ul>
+        <p><i>Safety:</i> Pull is blocked when local uncommitted changes exist.
+        Commit or stash your changes first.</p>
+
+        <h3>Clone latest source</h3>
+        <ul>
+          <li>Set a destination folder in Settings</li>
+          <li>Click <b>Clone Latest Source</b></li>
+          <li>A fresh copy is created in that folder</li>
+        </ul>
+
+        <h3>FFmpeg auto-bootstrap and update</h3>
+        <ul>
+          <li>Enable <b>Auto-install/update bundled FFmpeg on launch</b></li>
+          <li>Set <b>FFmpeg zip URL</b> (default points to a Windows build zip)</li>
+          <li>Click <b>Install / Update FFmpeg Now</b> to force refresh</li>
+        </ul>
+        <p>This is useful when the repo excludes large FFmpeg binaries,
+        or when you want a newer FFmpeg build without rerunning full setup.</p>
+        """,
+    },
+    {
         "id": "gpu",
         "title": "GPU Acceleration",
         "content": """

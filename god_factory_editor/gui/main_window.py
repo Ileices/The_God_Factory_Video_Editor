@@ -92,7 +92,7 @@ class MainWindow(QMainWindow):
 
         # Check for an auto-save recovery file
         QTimer.singleShot(200, self._check_recovery)
-        QTimer.singleShot(1200, self._maybe_auto_update_from_repo)
+        QTimer.singleShot(1200, self._run_startup_maintenance)
 
     # ── Menu ──────────────────────────────────────────────────────────────────
     def _build_menu(self):
@@ -1111,15 +1111,40 @@ class MainWindow(QMainWindow):
         self._autosave_timer.setInterval(interval_ms)
         self._update_proxy_badge()
 
+    def _run_startup_maintenance(self):
+        """Best-effort startup maintenance: FFmpeg readiness + repo update status."""
+        self._maybe_bootstrap_ffmpeg()
+        self._maybe_auto_update_from_repo()
+
+    def _maybe_bootstrap_ffmpeg(self):
+        try:
+            from god_factory_editor.core.ffmpeg_manager import FFmpegManager
+            ok, msg = FFmpegManager().ensure_on_launch()
+            if ok:
+                log.info(msg)
+            else:
+                log.warning(msg)
+                self.statusBar().showMessage(msg, 9000)
+        except Exception as exc:
+            log.warning(f"FFmpeg startup check skipped: {exc}")
+
     def _maybe_auto_update_from_repo(self):
-        if not settings.get("repo_auto_update_on_launch", False):
-            return
         try:
             from god_factory_editor.core.update_manager import UpdateManager
-            ok, msg = UpdateManager().pull_latest()
-            self.statusBar().showMessage(msg, 8000)
-            if ok:
-                show_info(self, "Update Downloaded", msg)
+            updater = UpdateManager()
+            if settings.get("repo_auto_update_on_launch", False):
+                ok, msg = updater.pull_latest()
+                self.statusBar().showMessage(msg, 8000)
+                if ok:
+                    show_info(self, "Update Downloaded", msg)
+                return
+
+            if settings.get("repo_auto_check_on_launch", True):
+                ok, msg = updater.remote_status()
+                if ok and "Update available" in msg:
+                    self.statusBar().showMessage(msg + " Open Settings to pull now.", 10000)
+                elif not ok:
+                    log.warning(msg)
         except Exception as exc:
             log.warning(f"Auto-update skipped: {exc}")
 

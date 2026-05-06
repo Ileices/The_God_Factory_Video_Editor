@@ -5,6 +5,7 @@ Provides caching for video info queries.
 
 from __future__ import annotations
 import json
+import re
 import subprocess
 import threading
 from pathlib import Path
@@ -733,6 +734,69 @@ class FFmpegWrapper:
         return silences, freezes, blacks
 
     # ── Availability check ────────────────────────────────────────────────────
+    def _scan_list_output(self, args: List[str], kind: str) -> List[str]:
+        """Parse ffmpeg list-style outputs (encoders/filters/protocols/etc)."""
+        ok, stdout, _ = self.run([self.ffmpeg, "-hide_banner", *args], timeout=30)
+        if not ok:
+            return []
+
+        names: List[str] = []
+        for raw in stdout.splitlines():
+            line = raw.rstrip()
+            if not line or line.startswith(" ") is False:
+                continue
+            if line.strip().startswith("="):
+                continue
+
+            parts = line.split()
+            if not parts:
+                continue
+
+            # Most ffmpeg list tables are: <flags> <name> <description...>
+            # Some are: <name>
+            token = parts[1] if len(parts) > 1 and re.fullmatch(r"[A-Z\.]{2,8}|[D\.EASVIFT]{2,8}", parts[0]) else parts[0]
+            token = token.strip()
+            if token and re.match(r"^[a-zA-Z0-9_\-\+\.]+$", token):
+                names.append(token)
+
+        # De-dup while preserving order
+        out: List[str] = []
+        seen = set()
+        for n in names:
+            if n not in seen:
+                seen.add(n)
+                out.append(n)
+        return out
+
+    def available_ffmpeg_capabilities(self) -> dict:
+        """
+        Return a capability map of what the current ffmpeg binary supports.
+        Used by Settings diagnostics and feature templates to expose 'magic' paths.
+        """
+        return {
+            "encoders": self._scan_list_output(["-encoders"], "encoders"),
+            "decoders": self._scan_list_output(["-decoders"], "decoders"),
+            "filters": self._scan_list_output(["-filters"], "filters"),
+            "formats": self._scan_list_output(["-formats"], "formats"),
+            "protocols": self._scan_list_output(["-protocols"], "protocols"),
+            "pix_fmts": self._scan_list_output(["-pix_fmts"], "pix_fmts"),
+            "bsfs": self._scan_list_output(["-bsfs"], "bsfs"),
+            "hwaccels": self._scan_list_output(["-hwaccels"], "hwaccels"),
+        }
+
+    def capabilities_summary_text(self) -> str:
+        caps = self.available_ffmpeg_capabilities()
+        lines = ["FFmpeg Capability Scan", ""]
+        for key in ("encoders", "decoders", "filters", "formats", "protocols", "pix_fmts", "bsfs", "hwaccels"):
+            items = caps.get(key, [])
+            preview = ", ".join(items[:20])
+            if len(items) > 20:
+                preview += ", ..."
+            lines.append(f"{key}: {len(items)}")
+            if preview:
+                lines.append(f"  {preview}")
+        return "\n".join(lines)
+
     def is_available(self) -> bool:
         ok, _, _ = self.run([self.ffmpeg, "-version"], timeout=10)
         return ok

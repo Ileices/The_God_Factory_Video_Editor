@@ -81,6 +81,7 @@ class ClipEffectsDialog(QDialog):
         tabs.addTab(self._build_audio_tab(),      "Audio")
         tabs.addTab(self._build_picture_tab(),    "Picture")
         tabs.addTab(self._build_captions_tab(),   "Captions")
+        tabs.addTab(self._build_magic_tab(),      "Magic")
         layout.addWidget(tabs)
 
         btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -483,6 +484,59 @@ class ClipEffectsDialog(QDialog):
         self._load_caption_rows()
         return w
 
+    def _build_magic_tab(self) -> QWidget:
+        w = QWidget()
+        v = QVBoxLayout(w)
+        v.setSpacing(10)
+
+        note = QLabel(
+            "Apply a full creative preset in one click. Templates tune speed, transition, "
+            "audio enhancement, and picture look together."
+        )
+        note.setWordWrap(True)
+        v.addWidget(note)
+
+        form = QFormLayout()
+        self._magic_combo = QComboBox()
+        self._magic_templates = effects_engine.magic_templates
+        for t in self._magic_templates:
+            self._magic_combo.addItem(t["label"], t["id"])
+        self._magic_combo.currentIndexChanged.connect(self._on_magic_template_changed)
+        form.addRow("Template:", self._magic_combo)
+
+        self._magic_adaptive_chk = QCheckBox("Adaptive tune for this clip length")
+        self._magic_adaptive_chk.setChecked(True)
+        form.addRow("", self._magic_adaptive_chk)
+
+        self._magic_desc = QLabel("")
+        self._magic_desc.setWordWrap(True)
+        self._magic_desc.setStyleSheet("color:#8b949e; font-size:11px;")
+        form.addRow("", self._magic_desc)
+        v.addLayout(form)
+
+        rec_ids = effects_engine.recommend_magic_templates(self._clip)
+        rec_labels = []
+        for rid in rec_ids:
+            found = next((t["label"] for t in self._magic_templates if t["id"] == rid), rid)
+            rec_labels.append(found)
+        self._magic_reco = QLabel("Recommended: " + ", ".join(rec_labels))
+        self._magic_reco.setStyleSheet("color:#8b949e; font-size:11px;")
+        self._magic_reco.setWordWrap(True)
+        v.addWidget(self._magic_reco)
+
+        apply_btn = QPushButton("Apply Template To This Clip")
+        apply_btn.clicked.connect(self._apply_magic_template)
+        v.addWidget(apply_btn)
+
+        self._magic_status = QLabel("")
+        self._magic_status.setWordWrap(True)
+        self._magic_status.setStyleSheet("color:#8b949e; font-size:11px;")
+        v.addWidget(self._magic_status)
+
+        v.addStretch()
+        self._on_magic_template_changed()
+        return w
+
     def _load_caption_rows(self):
         self._cap_table.setRowCount(0)
         for cap in self._clip.captions:
@@ -541,6 +595,43 @@ class ClipEffectsDialog(QDialog):
                     self._audio_preset_combo.blockSignals(False)
                     self._audio_desc_lbl.setText(p["description"])
                 return
+
+    def _on_magic_template_changed(self):
+        tid = self._magic_combo.currentData()
+        t = next((x for x in self._magic_templates if x["id"] == tid), None)
+        if not t:
+            self._magic_desc.setText("")
+            return
+        self._magic_desc.setText(t.get("description", ""))
+
+    def _apply_magic_template(self):
+        tid = self._magic_combo.currentData()
+        adaptive = self._magic_adaptive_chk.isChecked()
+        ok, msg = effects_engine.apply_magic_template(self._clip, tid, adaptive=adaptive)
+        self._magic_status.setText(msg)
+        self._magic_status.setStyleSheet("color:#3fb950; font-size:11px;" if ok else "color:#f85149; font-size:11px;")
+        if not ok:
+            return
+
+        # Reflect template values immediately across existing controls.
+        self._speed_spin.setValue(self._clip.speed)
+
+        t_idx = self._trans_combo.findData(self._clip.transition_out)
+        if t_idx >= 0:
+            self._trans_combo.setCurrentIndex(t_idx)
+        self._trans_dur_spin.setValue(self._clip.transition_duration)
+
+        self._voice_boost_spin.setValue(self._clip.audio_voice_boost)
+        self._game_duck_spin.setValue(self._clip.audio_game_duck)
+        self._normalize_chk.setChecked(self._clip.audio_normalize)
+        self._denoise_chk.setChecked(self._clip.audio_denoise)
+        self._sync_preset_from_clip()
+
+        self._brightness_spin.setValue(self._clip.picture_brightness)
+        self._contrast_spin.setValue(self._clip.picture_contrast)
+        self._saturation_spin.setValue(self._clip.picture_saturation)
+        self._gamma_spin.setValue(self._clip.picture_gamma)
+        self._sharpen_spin.setValue(self._clip.picture_sharpen)
 
     def _on_audio_preset_changed(self):
         pid = self._audio_preset_combo.currentData()

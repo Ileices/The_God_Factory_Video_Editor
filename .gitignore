@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# Runtime and user-generated data
+exports/
+imports/
+saves/
+temp/
+*.gfve
+*.log
+*.mp4
+*.mkv
+*.mov
+*.avi
+*.webm
+*.ts
+
+# Local notes / transcripts / generated docs
+SESSION_COMPLETE_*.md
+description/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/

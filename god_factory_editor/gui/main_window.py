@@ -44,7 +44,12 @@ from god_factory_editor.gui.dialogs.error_handler import (
 )
 from god_factory_editor.gui.dialogs.progress_dialog import ProgressDialog
 from god_factory_editor.utils.logger import log
-from god_factory_editor.utils.file_utils import is_video_file, video_file_dialog_filter
+from god_factory_editor.utils.file_utils import (
+    is_video_file,
+    is_external_project_file,
+    video_file_dialog_filter,
+    external_project_file_dialog_filter,
+)
 
 
 class MainWindow(QMainWindow):
@@ -111,6 +116,11 @@ class MainWindow(QMainWindow):
         self._act_open_project.setShortcut("Ctrl+Shift+O")
         self._act_open_project.triggered.connect(self.open_project)
         file_menu.addAction(self._act_open_project)
+
+        self._act_import_external_project = QAction("Import External Editor Project…", self)
+        self._act_import_external_project.setShortcut(kb.get("import_external_project", "Ctrl+Alt+O"))
+        self._act_import_external_project.triggered.connect(self.import_external_project)
+        file_menu.addAction(self._act_import_external_project)
 
         self._act_import_subtitles = QAction("Import Subtitles…", self)
         self._act_import_subtitles.setShortcut("Ctrl+Shift+T")
@@ -386,6 +396,8 @@ class MainWindow(QMainWindow):
             self.open_video()
         elif action_name == "open_project":
             self.open_project()
+        elif action_name == "import_external_project":
+            self.import_external_project()
         elif action_name == "import_subtitles":
             self._import_subtitles()
         elif action_name == "save_project":
@@ -598,6 +610,109 @@ class MainWindow(QMainWindow):
         )
         if path:
             self._load_project(Path(path))
+
+    def import_external_project(self):
+        if not self._confirm_discard():
+            return
+
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import External Editor Project",
+            settings.get("last_open_dir", ""),
+            external_project_file_dialog_filter(),
+        )
+        if not path:
+            return
+
+        settings.set("last_open_dir", str(Path(path).parent))
+        self._import_external_project_path(Path(path))
+
+    def _import_external_project_path(self, path: Path):
+        from god_factory_editor.utils.external_project_import import parse_external_project
+
+        try:
+            result = parse_external_project(path)
+        except Exception as exc:
+            log.exception(f"External project import failed for {path}: {exc}")
+            show_error(
+                self,
+                "Import Failed",
+                f"Could not import external project:\n{exc}",
+            )
+            return
+
+        if not result.segments and result.warnings:
+            show_info(
+                self,
+                "Import Guidance",
+                "\n".join(result.warnings),
+            )
+            return
+        if not result.segments:
+            show_warning(self, "Nothing Imported", "No clip segments were found in that project file.")
+            return
+
+        # Pick the first available media source path from project refs.
+        chosen_video = None
+        for p in result.source_candidates:
+            # Try direct path first.
+            if p.exists() and is_video_file(p):
+                chosen_video = p
+                break
+            # Try relative to imported project folder.
+            rel = (path.parent / p).resolve()
+            if rel.exists() and is_video_file(rel):
+                chosen_video = rel
+                break
+
+        if chosen_video is None:
+            pick, _ = QFileDialog.getOpenFileName(
+                self,
+                "Select Source Video For Imported Timeline",
+                str(path.parent),
+                video_file_dialog_filter(),
+            )
+            if not pick:
+                show_info(
+                    self,
+                    "Import Cancelled",
+                    "A source video is required to map imported timeline segments."
+                )
+                return
+            chosen_video = Path(pick)
+
+        self._load_video(chosen_video)
+
+        imported_clips: list[Clip] = []
+        for i, seg in enumerate(result.segments, start=1):
+            if seg.end <= seg.start:
+                continue
+            imported_clips.append(
+                Clip(
+                    start_time=max(0.0, seg.start),
+                    end_time=max(0.0, seg.end),
+                    name=(seg.name or f"Imported {i:02d}"),
+                )
+            )
+
+        if not imported_clips:
+            show_warning(self, "Nothing Imported", "No valid segment timings were produced from that file.")
+            return
+
+        self._clip_manager.load_clips(imported_clips)
+        self._mark_unsaved()
+
+        warn_txt = ""
+        if result.warnings:
+            warn_txt = "\n\nNotes:\n- " + "\n- ".join(result.warnings)
+
+        show_info(
+            self,
+            "External Project Imported",
+            f"Imported {len(imported_clips)} clip(s) from {result.format_name}.\n"
+            f"Loaded source video: {chosen_video.name}.{warn_txt}\n\n"
+            "You can now export these clips to MP4 or any supported export preset."
+        )
 
     def save_project(self) -> bool:
         if self._project_path:
@@ -1245,7 +1360,7 @@ class MainWindow(QMainWindow):
             return
         for url in event.mimeData().urls():
             p = Path(url.toLocalFile())
-            if p.suffix.lower() == PROJECT_EXTENSION or is_video_file(p):
+            if p.suffix.lower() == PROJECT_EXTENSION or is_video_file(p) or is_external_project_file(p):
                 event.acceptProposedAction()
                 return
         event.ignore()
@@ -1257,6 +1372,10 @@ class MainWindow(QMainWindow):
             log.info(f"Dropped path: {path}")
             if path.suffix.lower() == PROJECT_EXTENSION:
                 self._load_project(path)
+                handled = True
+                return
+            if is_external_project_file(path):
+                self._import_external_project_path(path)
                 handled = True
                 return
             if is_video_file(path):

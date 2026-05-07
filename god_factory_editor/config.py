@@ -83,6 +83,7 @@ DEFAULTS = {
         "redo": "Ctrl+Y",
         "save": "Ctrl+S",
         "open": "Ctrl+O",
+        "import_external_project": "Ctrl+Alt+O",
         "export_selected": "Ctrl+E",
         "export_all": "Ctrl+Shift+E",
         "auto_detect": "Ctrl+D",

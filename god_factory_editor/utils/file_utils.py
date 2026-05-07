@@ -20,6 +20,19 @@ SUPPORTED_SUBTITLE_EXTENSIONS = {
     ".sbv",   # YouTube SBV format
 }
 
+SUPPORTED_EXTERNAL_PROJECT_EXTENSIONS = {
+    ".edl",       # CMX/interchange EDL
+    ".fcpxml",    # Final Cut Pro XML interchange
+    ".xml",       # Generic XML interchange (FCP7/Premiere export)
+    ".prproj",    # Adobe Premiere project (best-effort)
+    ".kdenlive",  # Kdenlive project
+    ".mlt",       # Shotcut/Kdenlive MLT XML
+    ".osp",       # OpenShot project
+    ".vdp",       # VideoProc Vlogger project (proprietary; guidance only)
+    ".drp",       # DaVinci Resolve project export (proprietary package)
+    ".veg",       # VEGAS project (proprietary)
+}
+
 
 def is_video_file(path: Path) -> bool:
     return Path(path).suffix.lower() in SUPPORTED_VIDEO_EXTENSIONS
@@ -27,6 +40,10 @@ def is_video_file(path: Path) -> bool:
 
 def is_subtitle_file(path: Path) -> bool:
     return Path(path).suffix.lower() in SUPPORTED_SUBTITLE_EXTENSIONS
+
+
+def is_external_project_file(path: Path) -> bool:
+    return Path(path).suffix.lower() in SUPPORTED_EXTERNAL_PROJECT_EXTENSIONS
 
 
 def video_file_dialog_filter() -> str:
@@ -39,6 +56,17 @@ def subtitle_file_dialog_filter() -> str:
     """Build a Qt file dialog filter for subtitle files."""
     pattern = " ".join(f"*{ext}" for ext in sorted(SUPPORTED_SUBTITLE_EXTENSIONS))
     return f"Subtitle Files ({pattern});;All Files (*)"
+
+
+def external_project_file_dialog_filter() -> str:
+    """Build a Qt file dialog filter for external NLE project imports."""
+    pattern = " ".join(f"*{ext}" for ext in sorted(SUPPORTED_EXTERNAL_PROJECT_EXTENSIONS))
+    return (
+        f"External Editor Projects ({pattern});;"
+        "Interchange (EDL/XML/FCPXML) (*.edl *.xml *.fcpxml);;"
+        "Editor Projects (*.prproj *.kdenlive *.mlt *.osp *.vdp *.drp *.veg);;"
+        "All Files (*)"
+    )
 
 
 def sanitise_filename(name: str) -> str:

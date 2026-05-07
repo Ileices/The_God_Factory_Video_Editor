@@ -255,6 +255,7 @@ class ControlPanel(QDockWidget):
         
         layout.addWidget(self._create_button("Open Video", "open_video", "Ctrl+O"))
         layout.addWidget(self._create_button("Open Project", "open_project", "Ctrl+Shift+O"))
+        layout.addWidget(self._create_button("Import External Project", "import_external_project", "Ctrl+Alt+O"))
         layout.addWidget(self._create_button("Import Subtitles", "import_subtitles", "Ctrl+Shift+T"))
         layout.addWidget(self._create_button("Save Project", "save_project", "Ctrl+S"))
         layout.addWidget(self._create_button("Save As...", "save_project_as", "Ctrl+Shift+S"))

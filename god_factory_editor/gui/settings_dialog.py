@@ -138,6 +138,7 @@ class SettingsDialog(QDialog):
             "redo":              "Redo",
             "save":              "Save Project",
             "open":              "Open Video",
+            "import_external_project": "Import External Project",
             "export_selected":   "Export Selected",
             "export_all":        "Export All",
             "auto_detect":       "Auto-Detect Scenes",

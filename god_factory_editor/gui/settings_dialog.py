@@ -142,6 +142,8 @@ class SettingsDialog(QDialog):
             "export_selected":   "Export Selected",
             "export_all":        "Export All",
             "auto_detect":       "Auto-Detect Scenes",
+            "automation_wizard": "Automation Wizard",
+            "decibel_scan":      "Decibel / Loudness Scan",
             "toggle_proxy":      "Toggle Proxy Mode",
             "loop_clip":         "Loop Clip",
             "rename":            "Rename Clip",

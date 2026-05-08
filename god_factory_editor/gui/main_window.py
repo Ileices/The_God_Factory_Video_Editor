@@ -43,6 +43,7 @@ from god_factory_editor.gui.dialogs.error_handler import (
     show_error, show_warning, show_info, ask_yes_no,
 )
 from god_factory_editor.gui.dialogs.progress_dialog import ProgressDialog
+from god_factory_editor.gui.dialogs.automation_wizard_dialog import AutomationWizardDialog
 from god_factory_editor.utils.logger import log
 from god_factory_editor.utils.file_utils import (
     is_video_file,
@@ -211,6 +212,19 @@ class MainWindow(QMainWindow):
         act_auto_cut_boring.setShortcut("Ctrl+Shift+D")
         act_auto_cut_boring.triggered.connect(self._auto_cut_boring_parts)
         det_menu.addAction(act_auto_cut_boring)
+
+        # ── Automation ──
+        auto_menu = mb.addMenu("Automation")
+
+        self._act_automation_wizard = QAction("Automation Wizard…", self)
+        self._act_automation_wizard.setShortcut(kb.get("automation_wizard", "Ctrl+Alt+W"))
+        self._act_automation_wizard.triggered.connect(self._open_automation_wizard)
+        auto_menu.addAction(self._act_automation_wizard)
+
+        self._act_decibel_scan = QAction("Run Decibel / Loudness Scan", self)
+        self._act_decibel_scan.setShortcut(kb.get("decibel_scan", "Ctrl+Alt+L"))
+        self._act_decibel_scan.triggered.connect(self._run_decibel_scan)
+        auto_menu.addAction(self._act_decibel_scan)
 
         # ── View ──
         view_menu = mb.addMenu("View")
@@ -521,6 +535,10 @@ class MainWindow(QMainWindow):
             self._run_auto_detect()
         elif action_name == "auto_cut_boring":
             self._auto_cut_boring_parts()
+        elif action_name == "automation_wizard":
+            self._open_automation_wizard()
+        elif action_name == "decibel_scan":
+            self._run_decibel_scan()
         elif action_name == "open_auto_edit_settings":
             self._auto_cut_boring_parts()  # Opens the Auto-Edit Settings dialog
         elif action_name == "auto_suggest_transitions":
@@ -1159,6 +1177,133 @@ class MainWindow(QMainWindow):
             f"Transitions applied: {stats['transitions']} | SFX events: {stats['sfx']} | Slow-mo hints: {stats['slowmo']}.\n"
             f"Auto-captions generated: {caption_count}.\n\n"
             "Tip: open a clip in Effects to edit speed, SFX, transitions, and captions."
+        )
+
+    def _open_automation_wizard(self):
+        if not self._video_path or not self._project or not self._project.video:
+            show_info(self, "No Video", "Load a video first.")
+            return
+
+        cfg = AutomationWizardDialog(self)
+        if cfg.exec() != QDialog.DialogCode.Accepted:
+            return
+        vals = cfg.values()
+
+        if vals["profile_id"] != "audio_cleanup" and self._clip_manager.count > 0 and vals["replace_existing"]:
+            if not ask_yes_no(
+                self,
+                "Replace Existing Clips?",
+                "This automation run will replace your current clip list. Continue?",
+            ):
+                return
+
+        from god_factory_editor.core.automation_engine import automation_engine
+
+        progress = ProgressDialog(
+            title="Automation Wizard",
+            status_text="Running selected pipeline…",
+            parent=self,
+            can_cancel=False,
+        )
+        progress.set_progress(10, 100)
+        progress.show()
+
+        result = automation_engine.run(
+            profile_id=vals["profile_id"],
+            source=self._video_path,
+            total_duration=float(self._project.video.duration),
+            existing_clips=self._clip_manager.clips,
+            silence_seconds=vals["silence_seconds"],
+            freeze_seconds=vals["freeze_seconds"],
+            black_seconds=vals["black_seconds"],
+            min_keep_seconds=vals["min_keep_seconds"],
+            max_clips=vals["max_clips"],
+            short_target_seconds=vals["short_target_seconds"],
+            short_max_seconds=vals["short_max_seconds"],
+            generate_captions=vals["generate_captions"],
+            apply_transitions=vals["apply_transitions"],
+            apply_sfx=vals["apply_sfx"],
+            audio_preset_id=vals["audio_preset_id"],
+            decibel_gate_lufs=vals["decibel_gate_lufs"],
+        )
+        progress.set_progress(100, 100)
+        progress.on_finished()
+
+        if result.warnings and not result.clips and vals["profile_id"] != "audio_cleanup":
+            show_warning(self, "Automation Produced No Clips", "\n".join(result.warnings))
+            return
+
+        if vals["profile_id"] == "audio_cleanup":
+            for c in result.clips:
+                self._clip_manager.update_clip(c.id)
+        else:
+            if vals["replace_existing"]:
+                self._clip_manager.load_clips(result.clips)
+            else:
+                for c in result.clips:
+                    self._clip_manager.add_clip(c)
+
+        self._mark_unsaved()
+        self._clip_list.refresh()
+
+        lines = list(result.summary_lines)
+        if result.warnings:
+            lines.append("")
+            lines.append("Notes:")
+            lines.extend(f"- {w}" for w in result.warnings)
+
+        show_info(
+            self,
+            "Automation Complete",
+            "\n".join(lines) if lines else "Pipeline completed.",
+        )
+
+    def _run_decibel_scan(self):
+        if not self._video_path or not self._project or not self._project.video:
+            show_info(self, "No Video", "Load a video first.")
+            return
+
+        from god_factory_editor.core.automation_engine import automation_engine
+
+        total = float(self._project.video.duration)
+        progress = ProgressDialog(
+            title="Decibel / Loudness Scan",
+            status_text="Scanning loudness windows across the video…",
+            parent=self,
+            can_cancel=False,
+        )
+        progress.set_progress(15, 100)
+        progress.show()
+
+        windows = automation_engine.scan_loudness_windows(
+            source=self._video_path,
+            total_duration=total,
+            window_seconds=120.0,
+        )
+
+        progress.set_progress(100, 100)
+        progress.on_finished()
+
+        quiet = [w for w in windows if (w.get("integrated_lufs") is not None and w["integrated_lufs"] < -30.0)]
+        hot = [w for w in windows if (w.get("integrated_lufs") is not None and w["integrated_lufs"] > -12.0)]
+
+        def _fmtw(w: dict) -> str:
+            lufs = w.get("integrated_lufs")
+            lv = "n/a" if lufs is None else f"{lufs:.1f}"
+            return f"{self._fmt(w['start'])}-{self._fmt(w['end'])}: {lv} LUFS"
+
+        sample_quiet = "\n".join(_fmtw(w) for w in quiet[:6]) or "None"
+        sample_hot = "\n".join(_fmtw(w) for w in hot[:6]) or "None"
+
+        show_info(
+            self,
+            "Decibel Scan Complete",
+            f"Scanned {len(windows)} window(s) at 120s each.\n"
+            f"Quiet windows (< -30 LUFS): {len(quiet)}\n"
+            f"Hot windows (> -12 LUFS): {len(hot)}\n\n"
+            f"Quiet samples:\n{sample_quiet}\n\n"
+            f"Hot samples:\n{sample_hot}\n\n"
+            "Use Automation Wizard to gate highlights by loudness and batch-apply audio cleanup.",
         )
 
     def _on_detect_progress(self, pct: int):

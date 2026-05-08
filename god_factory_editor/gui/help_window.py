@@ -44,6 +44,8 @@ _TOPICS: list[dict] = [
            <a href="#clips">Creating clips</a> &nbsp;|&nbsp;
            <a href="#export">Exporting</a> &nbsp;|&nbsp;
             <a href="#autoedit">Auto cut boring parts</a> &nbsp;|&nbsp;
+            <a href="#automation">Automation wizard</a> &nbsp;|&nbsp;
+            <a href="#decibel">Decibel and loudness scan</a> &nbsp;|&nbsp;
            <a href="#speed">Speed changes</a> &nbsp;|&nbsp;
             <a href="#audio">Audio enhancement</a> &nbsp;|&nbsp;
             <a href="#picture">Picture adjustments</a></p>
@@ -303,6 +305,8 @@ _TOPICS: list[dict] = [
           <tr><td><b>Ctrl+Shift+E</b></td><td>Export all clips</td></tr>
           <tr><td><b>Ctrl+D</b></td><td>Auto-detect scenes</td></tr>
           <tr><td><b>Ctrl+Shift+D</b></td><td>Auto-cut boring parts</td></tr>
+          <tr><td><b>Ctrl+Alt+W</b></td><td>Open Automation Wizard</td></tr>
+          <tr><td><b>Ctrl+Alt+L</b></td><td>Run Decibel / Loudness Scan</td></tr>
           <tr><td><b>Ctrl+P</b></td><td>Toggle proxy mode</td></tr>
           <tr><td><b>L</b></td><td>Loop current clip (A-B repeat)</td></tr>
           <tr><td><b>F2</b></td><td>Rename selected clip</td></tr>
@@ -311,6 +315,80 @@ _TOPICS: list[dict] = [
           <tr><td><b>F1</b></td><td>Open Help</td></tr>
         </table>
         <p><small>You can change any shortcut in <b>Settings → Shortcuts</b>.</small></p>
+        """,
+    },
+    {
+        "id": "automation",
+        "title": "Automation Wizard",
+        "content": """
+        <h2>Automation Wizard</h2>
+        <p>The Automation Wizard turns multi-step editing work into one-click pipelines.
+        Open it from <b>Automation → Automation Wizard</b> or press <b>Ctrl+Alt+W</b>.</p>
+
+        <h3>Available one-click pipelines</h3>
+        <ul>
+          <li><b>Stream → Highlights (Long-form)</b>: removes downtime, ranks keep moments,
+              applies retention defaults, and can auto-generate editable captions.</li>
+          <li><b>Stream → Shorts Pack</b>: builds short-form candidates, trims/splits long moments,
+              and tags clips as short-ready.</li>
+          <li><b>Audio Cleanup On Existing Clips</b>: batch-applies voice-forward presets and
+              loudness-friendly settings across your clip list.</li>
+        </ul>
+
+        <h3>Key controls</h3>
+        <ul>
+          <li><b>Silence / No-motion / Black thresholds</b>: defines what counts as boring.</li>
+          <li><b>Minimum keep segment</b>: avoids tiny unusable fragments.</li>
+          <li><b>Decibel gate (LUFS)</b>: only keep moments above loudness floor.</li>
+          <li><b>Max generated clips</b>: caps result set for review speed.</li>
+          <li><b>Generate auto captions</b>: creates editable speech-region captions.</li>
+          <li><b>Apply retention transitions + SFX</b>: one-click pacing polish.</li>
+        </ul>
+
+        <h3>Recommended workflow</h3>
+        <ol>
+          <li>Run <a href="#decibel">Decibel Scan</a> first for loudness context.</li>
+          <li>Open Automation Wizard and choose the target pipeline.</li>
+          <li>Run with conservative thresholds first, then tighten if needed.</li>
+          <li>Review generated clips, tweak in Effects, then export.</li>
+        </ol>
+
+        ➡ <a href="#decibel">Decibel Scan</a> &nbsp;|&nbsp;
+           <a href="#autoedit">Auto-Cut Boring Parts</a>
+        """,
+    },
+    {
+        "id": "decibel",
+        "title": "Decibel and Loudness Scan",
+        "content": """
+        <h2>Decibel and Loudness Scan</h2>
+        <p>Use <b>Automation → Run Decibel / Loudness Scan</b> (Ctrl+Alt+L) to scan your full video
+        in time windows and highlight quiet or overly hot sections.</p>
+
+        <h3>What the scan reports</h3>
+        <ul>
+          <li><b>Integrated LUFS</b> for each analysis window</li>
+          <li><b>True Peak (dBTP)</b> and loudness range where available</li>
+          <li>Counts of <b>quiet windows</b> and <b>hot windows</b> with sample timestamps</li>
+        </ul>
+
+        <h3>Useful ranges</h3>
+        <ul>
+          <li><b>Below -30 LUFS</b>: usually quiet/dead sections or low-energy gameplay</li>
+          <li><b>-24 to -14 LUFS</b>: common active gameplay + commentary range</li>
+          <li><b>Above -12 LUFS</b>: potentially too loud/hot for comfortable playback</li>
+        </ul>
+
+        <h3>How this powers automation</h3>
+        <p>The Automation Wizard can use a <b>Decibel Gate (LUFS)</b> so only energetic
+        moments pass into highlight/shorts pipelines.</p>
+
+        <h3>Tip</h3>
+        <p>For long streams, start around <b>-34 LUFS</b> as a gate, then increase to
+        <b>-30</b> or <b>-28</b> for more aggressive highlight filtering.</p>
+
+        ➡ <a href="#automation">Automation Wizard</a> &nbsp;|&nbsp;
+           <a href="#audio">Audio Enhancement</a>
         """,
     },
     {

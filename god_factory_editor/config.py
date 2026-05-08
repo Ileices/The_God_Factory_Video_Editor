@@ -87,6 +87,8 @@ DEFAULTS = {
         "export_selected": "Ctrl+E",
         "export_all": "Ctrl+Shift+E",
         "auto_detect": "Ctrl+D",
+        "automation_wizard": "Ctrl+Alt+W",
+        "decibel_scan": "Ctrl+Alt+L",
         "toggle_proxy": "Ctrl+P",
         "loop_clip": "L",
         "rename": "F2",

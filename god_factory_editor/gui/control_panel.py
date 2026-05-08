@@ -384,8 +384,10 @@ class ControlPanel(QDockWidget):
         """DETECTION: Scene detection, Auto-cut."""
         group, layout = self._create_section("DETECTION & AUTO-EDIT")
         
+        layout.addWidget(self._create_button("Automation Wizard", "automation_wizard", "One-click pipelines"))
         layout.addWidget(self._create_button("Auto-Detect Scenes", "auto_detect", "Ctrl+D"))
         layout.addWidget(self._create_button("Auto-Cut Boring Parts", "auto_cut_boring", "Ctrl+Shift+D"))
+        layout.addWidget(self._create_button("Run Decibel Scan", "decibel_scan", "Loudness windows + guidance"))
         layout.addWidget(self._create_button("Auto-Suggest Transitions", "auto_suggest_transitions", ""))
         layout.addWidget(self._create_button("Auto-Suggest SFX", "auto_suggest_sfx", ""))
         layout.addWidget(self._create_button("Auto-Edit Settings...", "open_auto_edit_settings", ""))

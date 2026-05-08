@@ -286,7 +286,11 @@ def _parse_prproj(path: Path) -> ExternalImportResult:
 
 
 def _parse_vpd(path: Path) -> ExternalImportResult:
-    """Parse VideoProc Vlogger .vpd JSON project files."""
+    """Parse VideoProc Vlogger .vpd JSON project files.
+
+    Video track timing: seconds.
+    Subtitle/title track timing: milliseconds (divide by 1000).
+    """
     import json
 
     out = ExternalImportResult(format_name="VideoProc Vlogger (.vpd)")
@@ -308,11 +312,52 @@ def _parse_vpd(path: Path) -> ExternalImportResult:
                 res_map[uid] = p
                 out.source_candidates.append(p)
 
-    # Walk MainVideoTrack subitems
     timeline = data.get("timeline") or {}
-    subitems = timeline.get("subitems") or []
+    all_tracks = timeline.get("subitems") or []
+
+    # --- Title/caption extraction from SubtitleTrack (TextEffectBlocks) ---
+    # SubtitleTrack tstart/tduration are in MILLISECONDS; divide by 1000 for seconds.
+    class _TitleCard:
+        def __init__(self, timeline_start: float, timeline_end: float, text: str):
+            self.timeline_start = timeline_start
+            self.timeline_end = timeline_end
+            self.text = text
+
+    title_cards: list[_TitleCard] = []
+    for track in all_tracks:
+        if (track.get("type") or "") not in {"SubtitleTrack", "OverlayTrack"}:
+            continue
+        for block in (track.get("subitems") or []):
+            if (block.get("type") or "") not in {"TextEffectBlock", "TextBlock", "TitleBlock"}:
+                continue
+            ts_ms = float(block.get("tstart") or 0.0)
+            td_ms = float(block.get("tduration") or 0.0)
+            ts = ts_ms / 1000.0
+            te = ts + td_ms / 1000.0
+            # Collect all dialogue texts
+            texts: list[str] = []
+            for dlg in (block.get("attribute") or {}).get("dialogues") or []:
+                t = (dlg.get("text") or "").strip()
+                if t:
+                    texts.append(t)
+            text = " | ".join(texts)
+            if text:
+                title_cards.append(_TitleCard(ts, te, text))
+
+    def _best_title_for_block(tl_start: float, tl_end: float) -> str:
+        """Return the title card text whose window best overlaps with this block's output timeline range."""
+        best_text = ""
+        best_overlap = 0.0
+        for tc in title_cards:
+            overlap = max(0.0, min(tl_end, tc.timeline_end) - max(tl_start, tc.timeline_start))
+            if overlap > best_overlap:
+                best_overlap = overlap
+                best_text = tc.text
+        return best_text
+
+    # --- Video block extraction ---
     main_track = next(
-        (t for t in subitems if (t.get("type") or "") == "MainVideoTrack"),
+        (t for t in all_tracks if (t.get("type") or "") == "MainVideoTrack"),
         None,
     )
     if main_track is None:
@@ -325,17 +370,19 @@ def _parse_vpd(path: Path) -> ExternalImportResult:
     ]
 
     for i, block in enumerate(blocks, start=1):
-        title = (block.get("title") or f"Clip {i:02d}").strip()
         resid = (block.get("resid") or "").strip()
         src_path = res_map.get(resid)
 
-        # Prefer SpeedAttribute.Speed.baseData for source in/out (most accurate)
+        # Timeline position (output) — seconds
+        tl_start = float(block.get("tstart") or 0.0)
+        tl_dur = float(block.get("tduration") or 0.0)
+        tl_end = tl_start + tl_dur
+
+        # Source in/out — prefer SpeedAttribute (most accurate after speed changes)
         src_start: float = 0.0
         src_duration: float = 0.0
         try:
-            speed_base = (
-                block["attribute"]["SpeedAttribute"]["Speed"]["baseData"]
-            )
+            speed_base = block["attribute"]["SpeedAttribute"]["Speed"]["baseData"]
             cs = float(speed_base.get("fileCuttedStart") or 0.0)
             cd = float(speed_base.get("fileCuttedDuration") or 0.0)
             if cd > 0:
@@ -344,22 +391,42 @@ def _parse_vpd(path: Path) -> ExternalImportResult:
         except (KeyError, TypeError, ValueError):
             pass
 
-        # Fallback: use timeline tstart/tduration as rough bounds
         if src_duration <= 0:
-            src_start = float(block.get("tstart") or 0.0)
-            src_duration = float(block.get("tduration") or 0.0)
+            # Fallback to timeline duration
+            src_start = tl_start
+            src_duration = tl_dur
 
         if src_duration <= 0:
             continue
+
+        # Use matching title card text as clip name, fallback to sequence number
+        clip_title = _best_title_for_block(tl_start, tl_end)
+        if not clip_title:
+            clip_title = f"Clip {i:02d}"
 
         out.segments.append(
             ImportedSegment(
                 start=max(0.0, src_start),
                 end=max(0.0, src_start + src_duration),
-                name=title,
+                name=clip_title,
                 source=src_path,
             )
         )
+
+    if title_cards:
+        out.warnings.append(
+            f"Found {len(title_cards)} title/caption overlay(s): "
+            + "; ".join(f'"{tc.text}"' for tc in title_cards[:5])
+            + ("…" if len(title_cards) > 5 else "")
+            + " — text overlays have been used as clip names where they overlap."
+        )
+
+    out.warnings.append(
+        "NOTE: VideoProc Vlogger effects (color grading, transitions, overlays, "
+        "speed ramps, animations) cannot be reproduced in this editor — they live "
+        "inside VideoProc's rendering pipeline. To preserve all your effects, "
+        "export the finished video from VideoProc first, then load that MP4 here."
+    )
 
     if not out.segments:
         out.warnings.append(

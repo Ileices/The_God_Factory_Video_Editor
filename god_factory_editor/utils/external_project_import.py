@@ -55,6 +55,8 @@ def parse_external_project(path: Path) -> ExternalImportResult:
         return _parse_openshot(path)
     if suffix == ".prproj":
         return _parse_prproj(path)
+    if suffix == ".vpd":
+        return _parse_vpd(path)
 
     out = ExternalImportResult(format_name=suffix.lstrip(".").upper())
     out.warnings.append(
@@ -281,6 +283,89 @@ def _parse_prproj(path: Path) -> ExternalImportResult:
                 cleanup_tmp.unlink()
             except Exception:
                 pass
+
+
+def _parse_vpd(path: Path) -> ExternalImportResult:
+    """Parse VideoProc Vlogger .vpd JSON project files."""
+    import json
+
+    out = ExternalImportResult(format_name="VideoProc Vlogger (.vpd)")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8", errors="replace"))
+    except Exception as exc:
+        out.warnings.append(f"Could not read .vpd file: {exc}")
+        return out
+
+    # Build resid -> source path map from videolist
+    res_map: dict[str, Path] = {}
+    videolist = data.get("videolist") or {}
+    for item in videolist.get("subitems") or []:
+        uid = (item.get("uuid") or "").strip()
+        src = (item.get("path") or "").strip()
+        if uid and src:
+            p = _path_from_url_or_text(src)
+            if p:
+                res_map[uid] = p
+                out.source_candidates.append(p)
+
+    # Walk MainVideoTrack subitems
+    timeline = data.get("timeline") or {}
+    subitems = timeline.get("subitems") or []
+    main_track = next(
+        (t for t in subitems if (t.get("type") or "") == "MainVideoTrack"),
+        None,
+    )
+    if main_track is None:
+        out.warnings.append("No MainVideoTrack found in .vpd project.")
+        return out
+
+    blocks = [
+        b for b in (main_track.get("subitems") or [])
+        if (b.get("type") or "") == "MediaFileBlock"
+    ]
+
+    for i, block in enumerate(blocks, start=1):
+        title = (block.get("title") or f"Clip {i:02d}").strip()
+        resid = (block.get("resid") or "").strip()
+        src_path = res_map.get(resid)
+
+        # Prefer SpeedAttribute.Speed.baseData for source in/out (most accurate)
+        src_start: float = 0.0
+        src_duration: float = 0.0
+        try:
+            speed_base = (
+                block["attribute"]["SpeedAttribute"]["Speed"]["baseData"]
+            )
+            cs = float(speed_base.get("fileCuttedStart") or 0.0)
+            cd = float(speed_base.get("fileCuttedDuration") or 0.0)
+            if cd > 0:
+                src_start = cs
+                src_duration = cd
+        except (KeyError, TypeError, ValueError):
+            pass
+
+        # Fallback: use timeline tstart/tduration as rough bounds
+        if src_duration <= 0:
+            src_start = float(block.get("tstart") or 0.0)
+            src_duration = float(block.get("tduration") or 0.0)
+
+        if src_duration <= 0:
+            continue
+
+        out.segments.append(
+            ImportedSegment(
+                start=max(0.0, src_start),
+                end=max(0.0, src_start + src_duration),
+                name=title,
+                source=src_path,
+            )
+        )
+
+    if not out.segments:
+        out.warnings.append(
+            "No video clip blocks were found in this VideoProc Vlogger project."
+        )
+    return out
 
 
 def _parse_edl(path: Path) -> ExternalImportResult:

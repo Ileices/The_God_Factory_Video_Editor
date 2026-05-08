@@ -28,7 +28,7 @@ SUPPORTED_EXTERNAL_PROJECT_EXTENSIONS = {
     ".kdenlive",  # Kdenlive project
     ".mlt",       # Shotcut/Kdenlive MLT XML
     ".osp",       # OpenShot project
-    ".vdp",       # VideoProc Vlogger project (proprietary; guidance only)
+    ".vpd",       # VideoProc Vlogger project (JSON; parsed natively)
     ".drp",       # DaVinci Resolve project export (proprietary package)
     ".veg",       # VEGAS project (proprietary)
 }
@@ -64,7 +64,7 @@ def external_project_file_dialog_filter() -> str:
     return (
         f"External Editor Projects ({pattern});;"
         "Interchange (EDL/XML/FCPXML) (*.edl *.xml *.fcpxml);;"
-        "Editor Projects (*.prproj *.kdenlive *.mlt *.osp *.vdp *.drp *.veg);;"
+        "Editor Projects (*.prproj *.kdenlive *.mlt *.osp *.vpd *.drp *.veg);;"
         "All Files (*)"
     )
 

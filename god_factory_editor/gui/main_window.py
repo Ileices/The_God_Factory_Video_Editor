@@ -366,6 +366,32 @@ class MainWindow(QMainWindow):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
 
+        # Workflow guide banner — always visible, dismissible
+        self._workflow_banner = QLabel(
+            "  HOW TO CLIP:  "
+            "① Play video (Space)  "
+            "② Press I at the start of a good segment  "
+            "③ Press O at the end  "
+            "④ Name it → clip appears in the list  "
+            "⑤ Tick clips → Export Selected (Ctrl+E)  "
+            "  |  Double-click any clip to jump there  "
+            "  |  Delete removes the marker, not the source  "
+            "  [×]"
+        )
+        self._workflow_banner.setObjectName("workflowBanner")
+        self._workflow_banner.setStyleSheet(
+            "QLabel#workflowBanner {"
+            "  background: #1a2e1a;"
+            "  color: #b8e0b0;"
+            "  border-bottom: 1px solid #3d6e3d;"
+            "  padding: 4px 12px;"
+            "  font-size: 11px;"
+            "}"
+        )
+        self._workflow_banner.setCursor(Qt.PointingHandCursor)
+        self._workflow_banner.mousePressEvent = lambda e: self._workflow_banner.hide()
+        outer.addWidget(self._workflow_banner)
+
         # Top split: player (left) + clip list (right)
         top_split = QSplitter(Qt.Horizontal)
 
@@ -508,17 +534,25 @@ class MainWindow(QMainWindow):
         
         # ── EFFECTS (QUICK CONTROLS) ──────────────────────────────────────────
         elif action_name == "set_speed" and param:
-            clip = self._clip_manager.get_clip(self._clip_manager.selected_clip_ids[0] if self._clip_manager.selected_clip_ids else None)
+            sel_ids = list(self._clip_manager.selected_clip_ids)
+            clip = self._clip_manager.get_clip(sel_ids[0]) if sel_ids else None
             if clip:
                 try:
                     speed = float(param.rstrip('x'))
                     clip.speed = speed
+                    self._clip_manager.update_clip(clip.id)
                     self._clip_list.refresh()
+                    self.statusBar().showMessage(
+                        f"Speed set to {speed}x on '{clip.name}' — applies on export.", 4000
+                    )
                 except ValueError:
                     pass
-        
+            else:
+                self.statusBar().showMessage("Select a clip first to set speed.", 3000)
+
         elif action_name == "set_transition" and param:
-            clip = self._clip_manager.get_clip(self._clip_manager.selected_clip_ids[0] if self._clip_manager.selected_clip_ids else None)
+            sel_ids = list(self._clip_manager.selected_clip_ids)
+            clip = self._clip_manager.get_clip(sel_ids[0]) if sel_ids else None
             if clip:
                 trans_map = {
                     "None": "none",
@@ -529,10 +563,17 @@ class MainWindow(QMainWindow):
                     "Zoom": "zoom",
                 }
                 clip.transition_out = trans_map.get(param, "none")
+                self._clip_manager.update_clip(clip.id)
                 self._clip_list.refresh()
-        
+                self.statusBar().showMessage(
+                    f"Transition '{param}' set on '{clip.name}' — applies when exporting as single video.", 4000
+                )
+            else:
+                self.statusBar().showMessage("Select a clip first to set transition.", 3000)
+
         elif action_name == "set_audio_preset" and param:
-            clip = self._clip_manager.get_clip(self._clip_manager.selected_clip_ids[0] if self._clip_manager.selected_clip_ids else None)
+            sel_ids = list(self._clip_manager.selected_clip_ids)
+            clip = self._clip_manager.get_clip(sel_ids[0]) if sel_ids else None
             if clip:
                 preset_map = {
                     "Normal": {},
@@ -544,35 +585,63 @@ class MainWindow(QMainWindow):
                 if param in preset_map:
                     for key, val in preset_map[param].items():
                         setattr(clip, key, val)
+                    self._clip_manager.update_clip(clip.id)
                     self._clip_list.refresh()
-        
+                    if param != "Normal":
+                        self.statusBar().showMessage(
+                            f"Audio preset '{param}' applied to '{clip.name}' — use Preview Effects to hear it.", 5000
+                        )
+            else:
+                self.statusBar().showMessage("Select a clip first to apply audio preset.", 3000)
+
         elif action_name == "set_brightness" and param:
-            clip = self._clip_manager.get_clip(self._clip_manager.selected_clip_ids[0] if self._clip_manager.selected_clip_ids else None)
+            sel_ids = list(self._clip_manager.selected_clip_ids)
+            clip = self._clip_manager.get_clip(sel_ids[0]) if sel_ids else None
             if clip:
                 try:
                     clip.picture_brightness = int(param) / 100.0
+                    self._clip_manager.update_clip(clip.id)
                     self._clip_list.refresh()
+                    self.statusBar().showMessage(
+                        f"Brightness {int(param):+d}% on '{clip.name}' — use Preview Effects to see it.", 4000
+                    )
                 except ValueError:
                     pass
-        
+            else:
+                self.statusBar().showMessage("Select a clip first to adjust brightness.", 3000)
+
         elif action_name == "set_contrast" and param:
-            clip = self._clip_manager.get_clip(self._clip_manager.selected_clip_ids[0] if self._clip_manager.selected_clip_ids else None)
+            sel_ids = list(self._clip_manager.selected_clip_ids)
+            clip = self._clip_manager.get_clip(sel_ids[0]) if sel_ids else None
             if clip:
                 try:
                     clip.picture_contrast = int(param) / 100.0
+                    self._clip_manager.update_clip(clip.id)
                     self._clip_list.refresh()
+                    self.statusBar().showMessage(
+                        f"Contrast {int(param)}% on '{clip.name}' — use Preview Effects to see it.", 4000
+                    )
                 except ValueError:
                     pass
-        
+            else:
+                self.statusBar().showMessage("Select a clip first to adjust contrast.", 3000)
+
         elif action_name == "set_saturation" and param:
-            clip = self._clip_manager.get_clip(self._clip_manager.selected_clip_ids[0] if self._clip_manager.selected_clip_ids else None)
+            sel_ids = list(self._clip_manager.selected_clip_ids)
+            clip = self._clip_manager.get_clip(sel_ids[0]) if sel_ids else None
             if clip:
                 try:
                     clip.picture_saturation = int(param) / 100.0
+                    self._clip_manager.update_clip(clip.id)
                     self._clip_list.refresh()
+                    self.statusBar().showMessage(
+                        f"Saturation {int(param)}% on '{clip.name}' — use Preview Effects to see it.", 4000
+                    )
                 except ValueError:
                     pass
-        
+            else:
+                self.statusBar().showMessage("Select a clip first to adjust saturation.", 3000)
+
         # ── DETECTION & AUTO-EDIT ─────────────────────────────────────────────
         elif action_name == "auto_detect":
             self._run_auto_detect()
@@ -607,7 +676,9 @@ class MainWindow(QMainWindow):
         
         # ── VIEW & TOOLS ──────────────────────────────────────────────────────
         elif action_name == "toggle_proxy":
-            self._toggle_proxy()
+            new_state = not settings.get("proxy_enabled", True)
+            self._act_proxy.setChecked(new_state)
+            self._toggle_proxy(new_state)
         elif action_name == "fit_timeline":
             self._timeline.fit_to_width()
         elif action_name == "undo":
@@ -1010,14 +1081,16 @@ class MainWindow(QMainWindow):
             show_warning(self, "Invalid Range",
                          "The end point must be after the start point.")
             return
-        name, ok = QInputDialog.getText(self, "Name This Clip", "Clip name:")
-        if not ok:
-            return
-        clip = Clip(start_time=mark_in, end_time=out, name=name or "Clip")
+        # Auto-name so the clip is created immediately — user can rename with F2
+        existing_count = len(self._clip_manager.clips) + 1
+        auto_name = f"Clip {existing_count:02d}"
+        clip = Clip(start_time=mark_in, end_time=out, name=auto_name)
         self._clip_manager.add_clip(clip)
         self._timeline.clear_in_out()
         self._mark_in_time = None
-        self.statusBar().showMessage(f"Clip '{clip.name}' created ({clip.duration_str})")
+        self.statusBar().showMessage(
+            f"'{clip.name}' created ({clip.duration_str}) — select it and press F2 to rename."
+        )
 
     # ── Clip operations ───────────────────────────────────────────────────────
     def _split_clip(self):
@@ -1629,13 +1702,20 @@ class MainWindow(QMainWindow):
                   "Review them on the timeline and trim as needed.")
 
     # ── Proxy ─────────────────────────────────────────────────────────────────
-    def _toggle_proxy(self, enabled: bool):
+    def _toggle_proxy(self, enabled: bool = None):
+        if enabled is None:
+            enabled = not settings.get("proxy_enabled", True)
         settings.set("proxy_enabled", enabled)
+        self._act_proxy.setChecked(enabled)
         self._update_proxy_badge()
         if enabled and self._video_path:
             self._proxy_manager.ensure_proxy(self._video_path)
         elif not enabled and self._video_path:
             self._player.load(self._video_path)
+        self.statusBar().showMessage(
+            f"Proxy mode {'enabled — smooth 480p playback' if enabled else 'disabled — using original video'}.",
+            3000,
+        )
 
     def _on_proxy_ready(self, proxy_path: Path):
         if settings.get("proxy_enabled", True):
@@ -1993,6 +2073,32 @@ class MainWindow(QMainWindow):
             parent=self, export_as_single=True,
         )
         dlg.exec()
+
+    # ── Global keyboard handling ─────────────────────────────────────────────
+    def keyPressEvent(self, event):
+        """Handle global shortcuts that need to work regardless of which widget has focus."""
+        key = event.key()
+        mods = event.modifiers()
+        Qt_Key = Qt
+
+        if key == Qt.Key_Space:
+            self._player.toggle_play()
+            event.accept()
+            return
+
+        # Arrow seek (also handled in VideoPlayer but forwarded here if focus is elsewhere)
+        if key == Qt.Key_Left:
+            step = 30.0 if (mods & Qt.ShiftModifier) else 5.0
+            self._player.seek_relative(-step)
+            event.accept()
+            return
+        if key == Qt.Key_Right:
+            step = 30.0 if (mods & Qt.ShiftModifier) else 5.0
+            self._player.seek_relative(step)
+            event.accept()
+            return
+
+        super().keyPressEvent(event)
 
     # ── About ─────────────────────────────────────────────────────────────────
     def _show_about(self):

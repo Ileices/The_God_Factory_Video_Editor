@@ -169,6 +169,20 @@ class VideoPlayer(QWidget):
         self._audio.setVolume(clamp(volume, 0.0, 1.0))
         self._vol_slider.setValue(int(volume * 100))
 
+    # ── Aliases / extras expected by main_window ─────────────────────────────
+    def toggle_playback(self):
+        """Alias for toggle_play — called by control panel actions."""
+        self.toggle_play()
+
+    def seek_relative(self, delta: float):
+        """Seek forward/backward by delta seconds."""
+        self.seek(self.current_position() + delta)
+
+    def stop(self):
+        """Stop playback and return to start."""
+        self._player.stop()
+        self.seek(0.0)
+
     def set_loop(self, start: float, end: float):
         self._loop_start = start
         self._loop_end = end

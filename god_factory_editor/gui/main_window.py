@@ -1124,9 +1124,42 @@ class MainWindow(QMainWindow):
         self._open_export_dialog(clips)
 
     def _open_export_dialog(self, clips: List[Clip]):
-        if not self._video_path:
+        source_path = self._video_path
+
+        # Recovery path: opening a saved project can leave _video_path unset.
+        if (not source_path or not source_path.exists()) and self._project and self._project.video:
+            candidate = Path(self._project.video.path)
+            if candidate.exists() and is_video_file(candidate):
+                source_path = candidate
+                self._video_path = candidate
+
+        if not source_path or not source_path.exists():
+            pick, _ = QFileDialog.getOpenFileName(
+                self,
+                "Locate Source Video For Export",
+                settings.get("last_open_dir", ""),
+                video_file_dialog_filter(),
+            )
+            if pick:
+                source_path = Path(pick)
+                self._video_path = source_path
+                settings.set("last_open_dir", str(source_path.parent))
+
+        if not source_path or not source_path.exists():
+            show_error(
+                self,
+                "Cannot Export",
+                "No valid source video is currently loaded for export.\n"
+                "Load a video (or relink the project source) and try again.",
+                help_anchor="export",
+            )
             return
-        dlg = ExportDialog(self._video_path, clips, self._export_engine, self)
+
+        self.statusBar().showMessage(
+            f"Opening export dialog for {len(clips)} clip(s)…",
+            2500,
+        )
+        dlg = ExportDialog(source_path, clips, self._export_engine, self)
         dlg.exec()
 
     # ── Auto-detect ───────────────────────────────────────────────────────────

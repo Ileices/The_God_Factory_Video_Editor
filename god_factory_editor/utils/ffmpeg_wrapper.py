@@ -334,7 +334,7 @@ class FFmpegWrapper:
             if vcodec != "libx264":
                 fmt = self._cpu_format_for_encoder(vcodec)
                 if fmt:
-                    vf_final = f"{vf},{fmt}" if vf else f"format={fmt}"
+                    vf_final = f"{vf},format={fmt}" if vf else f"format={fmt}"
 
             args += [
                 "-c:a", "aac",

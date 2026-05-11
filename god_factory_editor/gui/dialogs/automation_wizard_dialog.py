@@ -84,6 +84,31 @@ class AutomationWizardDialog(QDialog):
         self._decibel_gate.setSuffix(" LUFS")
         form.addRow("Decibel gate (min loudness):", self._decibel_gate)
 
+        self._noise_floor = QDoubleSpinBox()
+        self._noise_floor.setRange(-70.0, -5.0)
+        self._noise_floor.setValue(-38.0)
+        self._noise_floor.setSingleStep(1.0)
+        self._noise_floor.setSuffix(" dB")
+        form.addRow("Silence noise floor:", self._noise_floor)
+
+        self._voice_low = QSpinBox()
+        self._voice_low.setRange(50, 1000)
+        self._voice_low.setValue(180)
+        self._voice_low.setSuffix(" Hz")
+        form.addRow("Voice band low cutoff:", self._voice_low)
+
+        self._voice_high = QSpinBox()
+        self._voice_high.setRange(1000, 12000)
+        self._voice_high.setValue(3400)
+        self._voice_high.setSuffix(" Hz")
+        form.addRow("Voice band high cutoff:", self._voice_high)
+
+        self._voice_sensitivity = QDoubleSpinBox()
+        self._voice_sensitivity.setRange(0.5, 3.0)
+        self._voice_sensitivity.setSingleStep(0.1)
+        self._voice_sensitivity.setValue(1.0)
+        form.addRow("Voice sensitivity:", self._voice_sensitivity)
+
         self._short_target = QDoubleSpinBox()
         self._short_target.setRange(10.0, 120.0)
         self._short_target.setValue(45.0)
@@ -155,6 +180,10 @@ class AutomationWizardDialog(QDialog):
             "min_keep_seconds": self._min_keep.value(),
             "max_clips": self._max_clips.value(),
             "decibel_gate_lufs": self._decibel_gate.value(),
+            "noise_floor_db": self._noise_floor.value(),
+            "voice_band_low_hz": self._voice_low.value(),
+            "voice_band_high_hz": self._voice_high.value(),
+            "voice_sensitivity": self._voice_sensitivity.value(),
             "short_target_seconds": self._short_target.value(),
             "short_max_seconds": self._short_max.value(),
             "generate_captions": self._captions.isChecked(),

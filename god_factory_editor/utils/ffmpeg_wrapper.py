@@ -34,6 +34,7 @@ class FFmpegWrapper:
                  ffprobe_path: Path = FFPROBE_EXE):
         self.ffmpeg = str(ffmpeg_path)
         self.ffprobe = str(ffprobe_path)
+        self.last_error: str = ""
         self._preferred_h264_encoder: Optional[str] = None
         self._preferred_hevc_encoder: Optional[str] = None
         self._available_h264_encoders: Optional[List[str]] = None
@@ -59,16 +60,22 @@ class FFmpegWrapper:
             )
             success = result.returncode == 0
             if not success:
+                self.last_error = (result.stderr or "")[-1500:]
                 log.warning(f"FFmpeg exit {result.returncode}: {result.stderr[-500:]}")
+            else:
+                self.last_error = ""
             return success, result.stdout, result.stderr
         except subprocess.TimeoutExpired:
             log.error(f"FFmpeg timed out after {timeout}s")
+            self.last_error = "Process timed out"
             return False, "", "Process timed out"
         except FileNotFoundError:
             log.error(f"FFmpeg not found at: {self.ffmpeg}")
+            self.last_error = f"FFmpeg executable not found: {self.ffmpeg}"
             return False, "", "FFmpeg executable not found"
         except Exception as exc:
             log.error(f"FFmpeg run error: {exc}")
+            self.last_error = str(exc)
             return False, "", str(exc)
 
     # ── Probe ─────────────────────────────────────────────────────────────────

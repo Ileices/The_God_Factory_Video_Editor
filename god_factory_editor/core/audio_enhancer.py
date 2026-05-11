@@ -128,6 +128,9 @@ class AudioEnhancer:
         duration: float,
         noise_floor_db: float = -38.0,
         min_silence_s: float = 0.25,
+        voice_band_low_hz: float = 180.0,
+        voice_band_high_hz: float = 3400.0,
+        voice_sensitivity: float = 1.0,
     ) -> List[DialogueRegion]:
         """
         Detect speech vs silent regions within a clip window.
@@ -140,11 +143,45 @@ class AudioEnhancer:
           on their energy and position, helping the UI show safe cut points
         """
         from god_factory_editor.utils.ffmpeg_wrapper import ffmpeg as ff
-        silences = ff.detect_silence(
-            source, start, duration,
-            noise_floor_db=noise_floor_db,
-            min_duration=min_silence_s,
-        )
+
+        # Band-limit to speech frequencies before silence detection.
+        # Higher sensitivity means less negative threshold (easier to classify as speech).
+        sens = max(0.5, min(3.0, float(voice_sensitivity)))
+        tuned_noise_floor = float(noise_floor_db) + (sens - 1.0) * 4.0
+        vlow = max(50.0, float(voice_band_low_hz))
+        vhigh = max(vlow + 50.0, float(voice_band_high_hz))
+
+        args = [
+            ff.ffmpeg,
+        ] + ff.hardware_decode_args() + [
+            "-ss", str(start),
+            "-i", str(source),
+            "-t", str(duration),
+            "-af",
+            (
+                f"highpass=f={vlow},"
+                f"lowpass=f={vhigh},"
+                f"silencedetect=noise={tuned_noise_floor}dB:duration={min_silence_s}"
+            ),
+            "-f", "null", "-",
+        ]
+        _, _, stderr = ff.run(args, timeout=120)
+
+        silences: List[Tuple[float, float]] = []
+        s_start: Optional[float] = None
+        for line in stderr.splitlines():
+            if "silence_start" in line:
+                try:
+                    s_start = float(line.split("silence_start:")[-1].strip())
+                except ValueError:
+                    pass
+            elif "silence_end" in line and s_start is not None:
+                try:
+                    s_end = float(line.split("silence_end:")[-1].split("|")[0].strip())
+                    silences.append((s_start, s_end))
+                    s_start = None
+                except ValueError:
+                    pass
 
         regions: List[DialogueRegion] = []
         prev_end = 0.0  # relative to clip start

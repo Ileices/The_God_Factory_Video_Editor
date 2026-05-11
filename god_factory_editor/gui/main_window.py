@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import time
 import random
+import tempfile
 from pathlib import Path
 from typing import Optional, List
 
@@ -51,6 +52,8 @@ from god_factory_editor.utils.file_utils import (
     video_file_dialog_filter,
     external_project_file_dialog_filter,
 )
+from god_factory_editor.utils.ffmpeg_wrapper import ffmpeg
+from god_factory_editor.config import TEMP_DIR
 
 
 class MainWindow(QMainWindow):
@@ -76,6 +79,11 @@ class MainWindow(QMainWindow):
         self._mark_in_time:  Optional[float]        = None
         self._unsaved:       bool                   = False
         self._autosave_path: Optional[Path]         = None
+        self._analysis_start: float                 = 0.0
+        self._analysis_end: Optional[float]         = None
+        self._excluded_ranges: list[tuple[float, float]] = []
+        self._preview_file: Optional[Path]          = None
+        self._preview_restore_pos: float            = 0.0
 
         # Build UI
         self._build_menu()
@@ -226,6 +234,28 @@ class MainWindow(QMainWindow):
         self._act_decibel_scan.triggered.connect(self._run_decibel_scan)
         auto_menu.addAction(self._act_decibel_scan)
 
+        auto_menu.addSeparator()
+
+        self._act_work_start = QAction("Set Work Start At Playhead", self)
+        self._act_work_start.setShortcut(kb.get("set_work_start", "Ctrl+Alt+1"))
+        self._act_work_start.triggered.connect(self._set_work_start_here)
+        auto_menu.addAction(self._act_work_start)
+
+        self._act_work_end = QAction("Set Work End At Playhead", self)
+        self._act_work_end.setShortcut(kb.get("set_work_end", "Ctrl+Alt+2"))
+        self._act_work_end.triggered.connect(self._set_work_end_here)
+        auto_menu.addAction(self._act_work_end)
+
+        self._act_work_clear = QAction("Clear Work Area + Excluded Zones", self)
+        self._act_work_clear.setShortcut(kb.get("clear_work_area", "Ctrl+Alt+0"))
+        self._act_work_clear.triggered.connect(self._clear_work_area)
+        auto_menu.addAction(self._act_work_clear)
+
+        self._act_exclude_selected = QAction("Exclude Selected Clips From Automation", self)
+        self._act_exclude_selected.setShortcut(kb.get("exclude_selected", "Ctrl+Alt+X"))
+        self._act_exclude_selected.triggered.connect(self._exclude_selected_clips_from_automation)
+        auto_menu.addAction(self._act_exclude_selected)
+
         # ── View ──
         view_menu = mb.addMenu("View")
 
@@ -261,6 +291,15 @@ class MainWindow(QMainWindow):
         act_clip_effects.setShortcut("E")
         act_clip_effects.triggered.connect(self._open_clip_effects)
         fx_menu.addAction(act_clip_effects)
+
+        act_preview_effects = QAction("Preview Selected Clip With Effects…", self)
+        act_preview_effects.setShortcut(kb.get("preview_effects", "Ctrl+Shift+P"))
+        act_preview_effects.triggered.connect(self._preview_selected_with_effects)
+        fx_menu.addAction(act_preview_effects)
+
+        act_return_source = QAction("Return To Source Playback", self)
+        act_return_source.triggered.connect(self._return_to_source_preview)
+        fx_menu.addAction(act_return_source)
 
         fx_menu.addSeparator()
 
@@ -441,7 +480,7 @@ class MainWindow(QMainWindow):
         elif action_name == "set_volume" and param:
             try:
                 volume = int(param)
-                self._player.set_volume(volume)
+                self._player.set_volume(volume / 100.0)
             except ValueError:
                 pass
         
@@ -460,6 +499,10 @@ class MainWindow(QMainWindow):
             self._toggle_loop()
         elif action_name == "edit_effects":
             self._open_clip_effects()
+        elif action_name == "preview_effects":
+            self._preview_selected_with_effects()
+        elif action_name == "return_source_preview":
+            self._return_to_source_preview()
         elif action_name == "merge_clips":
             self._merge_clips()
         
@@ -539,6 +582,14 @@ class MainWindow(QMainWindow):
             self._open_automation_wizard()
         elif action_name == "decibel_scan":
             self._run_decibel_scan()
+        elif action_name == "set_work_start":
+            self._set_work_start_here()
+        elif action_name == "set_work_end":
+            self._set_work_end_here()
+        elif action_name == "clear_work_area":
+            self._clear_work_area()
+        elif action_name == "exclude_selected":
+            self._exclude_selected_clips_from_automation()
         elif action_name == "open_auto_edit_settings":
             self._auto_cut_boring_parts()  # Opens the Auto-Edit Settings dialog
         elif action_name == "auto_suggest_transitions":
@@ -867,6 +918,10 @@ class MainWindow(QMainWindow):
             return
 
         self._video_path = path
+        self._analysis_start = 0.0
+        self._analysis_end = None
+        self._excluded_ranges.clear()
+        self._preview_file = None
         self._project = ProjectData()
         self._project.video = meta
         self._project_path = None
@@ -925,6 +980,10 @@ class MainWindow(QMainWindow):
             self._timeline.set_source_path(video_path)
         self._project      = project
         self._project_path = path
+        self._analysis_start = 0.0
+        self._analysis_end = None
+        self._excluded_ranges.clear()
+        self._preview_file = None
         self._unsaved      = False
         self._update_title()
         self.statusBar().showMessage(f"Loaded project: {path.name}", 3000)
@@ -1082,6 +1141,7 @@ class MainWindow(QMainWindow):
         self._scene_detector = SceneDetector(
             video_path=self._video_path, parent=self
         )
+        self._detect_scope = self._analysis_window()
         self._scene_detector.progress.connect(self._on_detect_progress)
         self._scene_detector.scenes_found.connect(self._on_scenes_found)
         self._scene_detector.failed.connect(
@@ -1112,15 +1172,19 @@ class MainWindow(QMainWindow):
             return
         cfg = cfg_dlg.values()
 
+        analysis_start, analysis_end = self._analysis_window()
+        noise_floor_db = float(settings.get("automation_noise_floor_db", -38.0))
+
         segments, boring = effects_engine.auto_plan_segments(
             self._video_path,
-            self._project.video.duration,
+            max(0.0, analysis_end - analysis_start),
             silence_seconds=cfg["silence_seconds"],
             freeze_seconds=cfg["freeze_seconds"],
             black_seconds=cfg["black_seconds"],
             min_keep_seconds=cfg["min_keep_seconds"],
             action=cfg["action"],
             speed_factor=cfg["speed_factor"],
+            noise_floor_db=noise_floor_db,
         )
 
         if not segments:
@@ -1138,14 +1202,16 @@ class MainWindow(QMainWindow):
         generated = []
         for seg in segments:
             clip = Clip(
-                start_time=seg["start"],
-                end_time=seg["end"],
+                start_time=analysis_start + seg["start"],
+                end_time=analysis_start + seg["end"],
                 name=seg["name"],
             )
             clip.speed = float(seg.get("speed", 1.0))
             if seg.get("kind") == "boring":
                 clip.tags.append("auto-boring")
             generated.append(clip)
+
+        generated = self._apply_excluded_ranges(generated)
 
         stats = effects_engine.apply_retention_rules(
             generated,
@@ -1179,6 +1245,174 @@ class MainWindow(QMainWindow):
             "Tip: open a clip in Effects to edit speed, SFX, transitions, and captions."
         )
 
+    def _analysis_window(self) -> tuple[float, float]:
+        if not self._project or not self._project.video:
+            return 0.0, 0.0
+        total = float(self._project.video.duration)
+        start = max(0.0, min(self._analysis_start, total))
+        end = total if self._analysis_end is None else max(start, min(self._analysis_end, total))
+        return start, end
+
+    def _normalize_ranges(self, ranges: list[tuple[float, float]]) -> list[tuple[float, float]]:
+        cleaned = [(max(0.0, float(a)), max(0.0, float(b))) for a, b in ranges if b > a]
+        cleaned.sort(key=lambda x: x[0])
+        merged: list[tuple[float, float]] = []
+        for a, b in cleaned:
+            if not merged or a > merged[-1][1]:
+                merged.append((a, b))
+            else:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+        return merged
+
+    def _apply_excluded_ranges(self, clips: list[Clip]) -> list[Clip]:
+        ranges = self._normalize_ranges(self._excluded_ranges)
+        if not ranges:
+            return clips
+        out: list[Clip] = []
+        for c in clips:
+            pieces = [(c.start_time, c.end_time)]
+            for ra, rb in ranges:
+                next_pieces: list[tuple[float, float]] = []
+                for a, b in pieces:
+                    if rb <= a or ra >= b:
+                        next_pieces.append((a, b))
+                        continue
+                    if ra > a:
+                        next_pieces.append((a, ra))
+                    if rb < b:
+                        next_pieces.append((rb, b))
+                pieces = next_pieces
+                if not pieces:
+                    break
+            for i, (a, b) in enumerate(pieces, start=1):
+                if b - a < 0.8:
+                    continue
+                nc = c.copy()
+                nc.start_time = a
+                nc.end_time = b
+                if len(pieces) > 1:
+                    nc.name = f"{c.name} Part {i}"
+                out.append(nc)
+        return out
+
+    def _set_work_start_here(self):
+        if not self._project or not self._project.video:
+            show_info(self, "No Video", "Load a video first.")
+            return
+        pos = self._player.current_position()
+        self._analysis_start = max(0.0, pos)
+        if self._analysis_end is not None and self._analysis_end < self._analysis_start:
+            self._analysis_end = self._analysis_start
+        s, e = self._analysis_window()
+        self.statusBar().showMessage(
+            f"Work area start set to {self._fmt(s)} (end: {self._fmt(e)})."
+        )
+
+    def _set_work_end_here(self):
+        if not self._project or not self._project.video:
+            show_info(self, "No Video", "Load a video first.")
+            return
+        pos = self._player.current_position()
+        self._analysis_end = max(self._analysis_start, pos)
+        s, e = self._analysis_window()
+        self.statusBar().showMessage(
+            f"Work area end set to {self._fmt(e)} (start: {self._fmt(s)})."
+        )
+
+    def _clear_work_area(self):
+        self._analysis_start = 0.0
+        self._analysis_end = None
+        self._excluded_ranges.clear()
+        self.statusBar().showMessage("Work area and excluded zones cleared.", 4000)
+
+    def _exclude_selected_clips_from_automation(self):
+        selected = [self._clip_manager.get_clip(cid) for cid in self._clip_manager.selected_clip_ids]
+        selected = [c for c in selected if c]
+        if not selected:
+            show_info(self, "No Selection", "Select one or more clips to exclude from automation.")
+            return
+        self._excluded_ranges.extend((c.start_time, c.end_time) for c in selected)
+        self._excluded_ranges = self._normalize_ranges(self._excluded_ranges)
+        total = sum(max(0.0, b - a) for a, b in self._excluded_ranges)
+        self.statusBar().showMessage(
+            f"Excluded {len(selected)} selected clip range(s) from automation (total excluded: {self._fmt(total)}).",
+            7000,
+        )
+
+    def _preview_selected_with_effects(self):
+        if not self._video_path:
+            show_info(self, "No Video", "Load a video first.")
+            return
+        sel = self._clip_manager.selected_clip_ids
+        if not sel:
+            show_info(self, "No Clip Selected", "Select a clip to render a preview.")
+            return
+        clip = self._clip_manager.get_clip(next(iter(sel)))
+        if not clip:
+            return
+
+        preview_dir = TEMP_DIR / "previews"
+        preview_dir.mkdir(parents=True, exist_ok=True)
+        out_path = preview_dir / f"preview_{clip.id}.mp4"
+        preview_len = min(20.0, max(2.0, clip.duration))
+
+        dlg = ProgressDialog(
+            title="Rendering Effect Preview",
+            status_text="Building temporary preview render…",
+            parent=self,
+            can_cancel=False,
+        )
+        dlg.set_progress(10, 100)
+        dlg.show()
+
+        ok = ffmpeg.export_clip_with_effects(
+            source=self._video_path,
+            start=clip.start_time,
+            duration=preview_len,
+            output=out_path,
+            speed=clip.speed,
+            voice_boost_db=clip.audio_voice_boost,
+            game_duck_db=clip.audio_game_duck,
+            normalize=clip.audio_normalize,
+            denoise=clip.audio_denoise,
+            picture_brightness=clip.picture_brightness,
+            picture_contrast=clip.picture_contrast,
+            picture_saturation=clip.picture_saturation,
+            picture_gamma=clip.picture_gamma,
+            picture_sharpen=clip.picture_sharpen,
+            crf=20,
+            resolution=None,
+        )
+        dlg.set_progress(100, 100)
+        dlg.on_finished()
+
+        if not ok or not out_path.exists():
+            show_error(self, "Preview Render Failed", "Could not render effect preview. Check FFmpeg logs.")
+            return
+
+        self._preview_restore_pos = clip.start_time
+        self._preview_file = out_path
+        self._player.load(out_path)
+        self._player.seek(0.0)
+        self._player.play()
+        self.statusBar().showMessage(
+            f"Previewing rendered effects for '{clip.name}' ({self._fmt(preview_len)}). Use Effects -> Return To Source Playback when done.",
+            9000,
+        )
+
+    def _return_to_source_preview(self):
+        if not self._video_path:
+            return
+        playback_path = self._video_path
+        if settings.get("proxy_enabled", True):
+            proxy = self._proxy_manager.get_proxy_path(self._video_path)
+            if proxy and proxy.exists():
+                playback_path = proxy
+        self._player.load(playback_path)
+        self._player.seek(self._preview_restore_pos)
+        self._preview_file = None
+        self.statusBar().showMessage("Returned to source playback.", 3000)
+
     def _open_automation_wizard(self):
         if not self._video_path or not self._project or not self._project.video:
             show_info(self, "No Video", "Load a video first.")
@@ -1188,6 +1422,10 @@ class MainWindow(QMainWindow):
         if cfg.exec() != QDialog.DialogCode.Accepted:
             return
         vals = cfg.values()
+        settings.set("automation_noise_floor_db", vals.get("noise_floor_db", -38.0))
+        settings.set("voice_band_low_hz", vals.get("voice_band_low_hz", 180.0))
+        settings.set("voice_band_high_hz", vals.get("voice_band_high_hz", 3400.0))
+        settings.set("voice_sensitivity", vals.get("voice_sensitivity", 1.0))
 
         if vals["profile_id"] != "audio_cleanup" and self._clip_manager.count > 0 and vals["replace_existing"]:
             if not ask_yes_no(
@@ -1225,6 +1463,10 @@ class MainWindow(QMainWindow):
             apply_sfx=vals["apply_sfx"],
             audio_preset_id=vals["audio_preset_id"],
             decibel_gate_lufs=vals["decibel_gate_lufs"],
+            analysis_start=self._analysis_window()[0],
+            analysis_end=self._analysis_window()[1],
+            exclude_ranges=self._excluded_ranges,
+            noise_floor_db=vals.get("noise_floor_db", -38.0),
         )
         progress.set_progress(100, 100)
         progress.on_finished()
@@ -1266,6 +1508,7 @@ class MainWindow(QMainWindow):
         from god_factory_editor.core.automation_engine import automation_engine
 
         total = float(self._project.video.duration)
+        analysis_start, analysis_end = self._analysis_window()
         progress = ProgressDialog(
             title="Decibel / Loudness Scan",
             status_text="Scanning loudness windows across the video…",
@@ -1279,6 +1522,8 @@ class MainWindow(QMainWindow):
             source=self._video_path,
             total_duration=total,
             window_seconds=120.0,
+            start_offset=analysis_start,
+            end_offset=analysis_end,
         )
 
         progress.set_progress(100, 100)
@@ -1323,8 +1568,26 @@ class MainWindow(QMainWindow):
                       "No scene changes were detected. Try lowering the threshold "
                       "in Settings, or mark clips manually.")
             return
+        scope = getattr(self, "_detect_scope", self._analysis_window())
+        s0, s1 = scope
+        banned = self._normalize_ranges(self._excluded_ranges)
+
+        def _overlaps_banned(a: float, b: float) -> bool:
+            for x, y in banned:
+                if not (b <= x or a >= y):
+                    return True
+            return False
+
         accepted = 0
         for i, (start, end) in enumerate(scenes):
+            if end <= s0 or start >= s1:
+                continue
+            start = max(start, s0)
+            end = min(end, s1)
+            if end - start < 0.5:
+                continue
+            if _overlaps_banned(start, end):
+                continue
             name = f"Scene {i + 1}"
             self._clip_manager.add_clip(Clip(start_time=start, end_time=end, name=name))
             accepted += 1

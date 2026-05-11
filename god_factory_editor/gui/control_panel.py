@@ -311,6 +311,8 @@ class ControlPanel(QDockWidget):
         layout.addWidget(self._create_button("Rename", "rename_clip", "F2"))
         layout.addWidget(self._create_button("Loop Clip (A-B)", "toggle_loop", "L"))
         layout.addWidget(self._create_button("Edit Effects", "edit_effects", "E"))
+        layout.addWidget(self._create_button("Preview Effects Render", "preview_effects", "Ctrl+Shift+P"))
+        layout.addWidget(self._create_button("Return To Source", "return_source_preview", ""))
         layout.addWidget(self._create_button("Merge Clips", "merge_clips", ""))
         
         return group
@@ -385,6 +387,10 @@ class ControlPanel(QDockWidget):
         group, layout = self._create_section("DETECTION & AUTO-EDIT")
         
         layout.addWidget(self._create_button("Automation Wizard", "automation_wizard", "One-click pipelines"))
+        layout.addWidget(self._create_button("Set Work Start Here", "set_work_start", "Ctrl+Alt+1"))
+        layout.addWidget(self._create_button("Set Work End Here", "set_work_end", "Ctrl+Alt+2"))
+        layout.addWidget(self._create_button("Exclude Selected From Automation", "exclude_selected", "Ctrl+Alt+X"))
+        layout.addWidget(self._create_button("Clear Work Area", "clear_work_area", "Ctrl+Alt+0"))
         layout.addWidget(self._create_button("Auto-Detect Scenes", "auto_detect", "Ctrl+D"))
         layout.addWidget(self._create_button("Auto-Cut Boring Parts", "auto_cut_boring", "Ctrl+Shift+D"))
         layout.addWidget(self._create_button("Run Decibel Scan", "decibel_scan", "Loudness windows + guidance"))

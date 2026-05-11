@@ -65,11 +65,23 @@ class AutomationEngine:
         apply_sfx: bool = True,
         audio_preset_id: str = "voice_boost_light",
         decibel_gate_lufs: float = -34.0,
+        analysis_start: float = 0.0,
+        analysis_end: Optional[float] = None,
+        exclude_ranges: Optional[list[tuple[float, float]]] = None,
+        noise_floor_db: float = -38.0,
     ) -> AutomationResult:
+        start = max(0.0, float(analysis_start))
+        end = float(analysis_end) if analysis_end is not None else float(total_duration)
+        end = max(start, min(float(total_duration), end))
+        scope_duration = max(0.0, end - start)
+        skip_ranges = self._normalize_ranges(exclude_ranges or [])
+
         if profile_id == "stream_highlights":
             return self._stream_to_highlights(
                 source=source,
-                total_duration=total_duration,
+                total_duration=scope_duration,
+                start_offset=start,
+                exclude_ranges=skip_ranges,
                 silence_seconds=silence_seconds,
                 freeze_seconds=freeze_seconds,
                 black_seconds=black_seconds,
@@ -79,12 +91,15 @@ class AutomationEngine:
                 apply_transitions=apply_transitions,
                 apply_sfx=apply_sfx,
                 decibel_gate_lufs=decibel_gate_lufs,
+                noise_floor_db=noise_floor_db,
             )
 
         if profile_id == "stream_shorts":
             return self._stream_to_shorts(
                 source=source,
-                total_duration=total_duration,
+                total_duration=scope_duration,
+                start_offset=start,
+                exclude_ranges=skip_ranges,
                 silence_seconds=silence_seconds,
                 freeze_seconds=freeze_seconds,
                 black_seconds=black_seconds,
@@ -94,6 +109,7 @@ class AutomationEngine:
                 max_seconds=short_max_seconds,
                 generate_captions=generate_captions,
                 decibel_gate_lufs=decibel_gate_lufs,
+                noise_floor_db=noise_floor_db,
             )
 
         if profile_id == "audio_cleanup":
@@ -114,13 +130,18 @@ class AutomationEngine:
         source: Path,
         total_duration: float,
         window_seconds: float = 120.0,
+        start_offset: float = 0.0,
+        end_offset: Optional[float] = None,
     ) -> list[dict]:
         """Return windowed loudness analysis for decibel/LUFS driven workflows."""
         out: list[dict] = []
         window = max(10.0, float(window_seconds))
-        pos = 0.0
-        while pos < total_duration:
-            dur = min(window, total_duration - pos)
+        start = max(0.0, float(start_offset))
+        end = float(end_offset) if end_offset is not None else float(total_duration)
+        end = max(start, min(float(total_duration), end))
+        pos = start
+        while pos < end:
+            dur = min(window, end - pos)
             m = ff.detect_loudness(source, pos, dur)
             out.append(
                 {
@@ -139,6 +160,8 @@ class AutomationEngine:
         *,
         source: Path,
         total_duration: float,
+        start_offset: float,
+        exclude_ranges: list[tuple[float, float]],
         silence_seconds: float,
         freeze_seconds: float,
         black_seconds: float,
@@ -148,6 +171,7 @@ class AutomationEngine:
         apply_transitions: bool,
         apply_sfx: bool,
         decibel_gate_lufs: float,
+        noise_floor_db: float,
     ) -> AutomationResult:
         segments, boring = effects_engine.auto_plan_segments(
             source,
@@ -158,12 +182,13 @@ class AutomationEngine:
             min_keep_seconds=min_keep_seconds,
             action="remove",
             speed_factor=8.0,
+            noise_floor_db=noise_floor_db,
         )
 
         clips = [
             Clip(
-                start_time=s["start"],
-                end_time=s["end"],
+                start_time=start_offset + s["start"],
+                end_time=start_offset + s["end"],
                 name=f"Highlight {i:02d}",
                 tags=["auto", "highlight"],
             )
@@ -171,6 +196,7 @@ class AutomationEngine:
             if s.get("kind") == "keep" and s["end"] > s["start"]
         ]
 
+        clips = self._subtract_ranges_from_clips(clips, exclude_ranges)
         clips = self._filter_by_decibel_gate(source=source, clips=clips, min_lufs=decibel_gate_lufs)
         clips = self._limit_and_rank(source=source, clips=clips, max_clips=max_clips)
 
@@ -201,6 +227,8 @@ class AutomationEngine:
         *,
         source: Path,
         total_duration: float,
+        start_offset: float,
+        exclude_ranges: list[tuple[float, float]],
         silence_seconds: float,
         freeze_seconds: float,
         black_seconds: float,
@@ -210,10 +238,13 @@ class AutomationEngine:
         max_seconds: float,
         generate_captions: bool,
         decibel_gate_lufs: float,
+        noise_floor_db: float,
     ) -> AutomationResult:
         base = self._stream_to_highlights(
             source=source,
             total_duration=total_duration,
+            start_offset=start_offset,
+            exclude_ranges=exclude_ranges,
             silence_seconds=silence_seconds,
             freeze_seconds=freeze_seconds,
             black_seconds=black_seconds,
@@ -223,6 +254,7 @@ class AutomationEngine:
             apply_transitions=False,
             apply_sfx=True,
             decibel_gate_lufs=decibel_gate_lufs,
+            noise_floor_db=noise_floor_db,
         )
 
         out: list[Clip] = []
@@ -328,6 +360,48 @@ class AutomationEngine:
             if c.name.startswith("Highlight"):
                 c.name = f"Highlight {i:02d}"
         return selected
+
+    @staticmethod
+    def _normalize_ranges(ranges: list[tuple[float, float]]) -> list[tuple[float, float]]:
+        cleaned = [(max(0.0, float(a)), max(0.0, float(b))) for a, b in ranges if b > a]
+        cleaned.sort(key=lambda x: x[0])
+        merged: list[tuple[float, float]] = []
+        for a, b in cleaned:
+            if not merged or a > merged[-1][1]:
+                merged.append((a, b))
+            else:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], b))
+        return merged
+
+    def _subtract_ranges_from_clips(self, clips: list[Clip], ranges: list[tuple[float, float]]) -> list[Clip]:
+        if not ranges:
+            return clips
+        out: list[Clip] = []
+        for c in clips:
+            pieces = [(c.start_time, c.end_time)]
+            for ra, rb in ranges:
+                next_pieces: list[tuple[float, float]] = []
+                for a, b in pieces:
+                    if rb <= a or ra >= b:
+                        next_pieces.append((a, b))
+                        continue
+                    if ra > a:
+                        next_pieces.append((a, ra))
+                    if rb < b:
+                        next_pieces.append((rb, b))
+                pieces = next_pieces
+                if not pieces:
+                    break
+            for i, (a, b) in enumerate(pieces, start=1):
+                if b - a < 0.8:
+                    continue
+                nc = c.copy()
+                nc.start_time = a
+                nc.end_time = b
+                if len(pieces) > 1:
+                    nc.name = f"{c.name} Part {i}"
+                out.append(nc)
+        return out
 
 
 automation_engine = AutomationEngine()

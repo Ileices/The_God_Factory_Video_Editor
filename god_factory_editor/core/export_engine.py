@@ -146,7 +146,8 @@ class ExportEngine(QThread):
             else:
                 clip.export_status = "failed"
                 failed_names.append(name)
-                self.clip_failed.emit(name, "FFmpeg returned an error. Check logs.")
+                detail = (self._ff.last_error or "FFmpeg returned an error.").strip()
+                self.clip_failed.emit(name, detail[:600])
                 log.warning(f"Export failed: {name}")
 
             self.progress.emit(i + 1, total)
@@ -190,7 +191,8 @@ class ExportEngine(QThread):
             else:
                 failed_names.append(name)
                 all_ok = False
-                self.clip_failed.emit(name, "Failed to prepare segment.")
+                detail = (self._ff.last_error or "Failed to prepare segment.").strip()
+                self.clip_failed.emit(name, detail[:600])
 
             self.progress.emit(i + 1, total + 1)
 
@@ -207,7 +209,8 @@ class ExportEngine(QThread):
                 self.clip_done.emit(out_name, out_path)
             else:
                 failed_names.append("compilation")
-                self.clip_failed.emit("compilation", "Concat/transition export failed.")
+                detail = (self._ff.last_error or "Concat/transition export failed.").strip()
+                self.clip_failed.emit("compilation", detail[:600])
 
         # Cleanup temp files
         for seg in segments:

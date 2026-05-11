@@ -46,6 +46,7 @@ _TOPICS: list[dict] = [
             <a href="#autoedit">Auto cut boring parts</a> &nbsp;|&nbsp;
             <a href="#automation">Automation wizard</a> &nbsp;|&nbsp;
             <a href="#decibel">Decibel and loudness scan</a> &nbsp;|&nbsp;
+           <a href="#workarea">Work area and dead-zone trimming</a> &nbsp;|&nbsp;
            <a href="#speed">Speed changes</a> &nbsp;|&nbsp;
             <a href="#audio">Audio enhancement</a> &nbsp;|&nbsp;
             <a href="#picture">Picture adjustments</a></p>
@@ -307,6 +308,10 @@ _TOPICS: list[dict] = [
           <tr><td><b>Ctrl+Shift+D</b></td><td>Auto-cut boring parts</td></tr>
           <tr><td><b>Ctrl+Alt+W</b></td><td>Open Automation Wizard</td></tr>
           <tr><td><b>Ctrl+Alt+L</b></td><td>Run Decibel / Loudness Scan</td></tr>
+          <tr><td><b>Ctrl+Shift+P</b></td><td>Preview selected clip effects render</td></tr>
+          <tr><td><b>Ctrl+Alt+1 / Ctrl+Alt+2</b></td><td>Set work start / end at playhead</td></tr>
+          <tr><td><b>Ctrl+Alt+X</b></td><td>Exclude selected clips from automation</td></tr>
+          <tr><td><b>Ctrl+Alt+0</b></td><td>Clear work area + excluded zones</td></tr>
           <tr><td><b>Ctrl+P</b></td><td>Toggle proxy mode</td></tr>
           <tr><td><b>L</b></td><td>Loop current clip (A-B repeat)</td></tr>
           <tr><td><b>F2</b></td><td>Rename selected clip</td></tr>
@@ -338,6 +343,8 @@ _TOPICS: list[dict] = [
         <h3>Key controls</h3>
         <ul>
           <li><b>Silence / No-motion / Black thresholds</b>: defines what counts as boring.</li>
+          <li><b>Silence noise floor (dB)</b>: controls sensitivity of dead-air detection.</li>
+          <li><b>Voice band low/high + sensitivity</b>: tune detection toward party chat + voice.</li>
           <li><b>Minimum keep segment</b>: avoids tiny unusable fragments.</li>
           <li><b>Decibel gate (LUFS)</b>: only keep moments above loudness floor.</li>
           <li><b>Max generated clips</b>: caps result set for review speed.</li>
@@ -354,7 +361,40 @@ _TOPICS: list[dict] = [
         </ol>
 
         ➡ <a href="#decibel">Decibel Scan</a> &nbsp;|&nbsp;
-           <a href="#autoedit">Auto-Cut Boring Parts</a>
+           <a href="#autoedit">Auto-Cut Boring Parts</a> &nbsp;|&nbsp;
+           <a href="#workarea">Work Area</a>
+        """,
+    },
+    {
+        "id": "workarea",
+        "title": "Work Area and Dead-Zone Trimming",
+        "content": """
+        <h2>Work Area and Dead-Zone Trimming</h2>
+        <p>For long streams, you can scope automation to the part that matters and explicitly
+        exclude dead zones (for example 30 minutes of "stream starting soon").</p>
+
+        <h3>How to use</h3>
+        <ol>
+          <li>Seek to where meaningful content starts, then set <b>Work Start</b>.</li>
+          <li>Seek to where you want processing to stop, then set <b>Work End</b>.</li>
+          <li>Select obvious dead clips and run <b>Exclude Selected From Automation</b>.</li>
+          <li>Run Automation Wizard or Decibel Scan — both respect this scope.</li>
+        </ol>
+
+        <h3>Commands</h3>
+        <ul>
+          <li><b>Ctrl+Alt+1</b> Set Work Start At Playhead</li>
+          <li><b>Ctrl+Alt+2</b> Set Work End At Playhead</li>
+          <li><b>Ctrl+Alt+X</b> Exclude Selected Clips From Automation</li>
+          <li><b>Ctrl+Alt+0</b> Clear Work Area + Excluded Zones</li>
+        </ul>
+
+        <h3>Important note</h3>
+        <p>This does not destroy your source file. It only scopes analysis and pipeline generation.
+        You can clear the scope at any time and process the full stream again.</p>
+
+        ➡ <a href="#automation">Automation Wizard</a> &nbsp;|&nbsp;
+           <a href="#decibel">Decibel Scan</a>
         """,
     },
     {
@@ -560,6 +600,11 @@ _TOPICS: list[dict] = [
         <p>Transitions only work when you use <b>Effects → Export as Single Video</b>
         (or Effects → Export as Single, Ctrl+Shift+M). Individual clip exports ignore
         transitions.</p>
+
+          <h3>Preview before export</h3>
+          <p>Use <b>Effects → Preview Selected Clip With Effects</b> (Ctrl+Shift+P) to render a
+          temporary preview clip and play it instantly. This lets you audition audio/picture
+          changes before full export. Use <b>Return To Source Playback</b> when done.</p>
         ➡ <a href="#speed">Speed Changes</a> &nbsp;|&nbsp;
            <a href="#sfx">Sound Effects</a>
         """,

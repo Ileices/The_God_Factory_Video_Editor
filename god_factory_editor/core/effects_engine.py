@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import List, Optional, Tuple
 
 from god_factory_editor.utils.logger import log
+from god_factory_editor.config import settings
 
 # ── Speed presets ──────────────────────────────────────────────────────────────
 SPEED_PRESETS: list[dict] = [
@@ -429,6 +430,7 @@ class EffectsEngine:
         silence_seconds: float = 12.0,
         freeze_seconds: float = 6.0,
         black_seconds: float = 2.0,
+        noise_floor_db: float = -38.0,
     ) -> list[dict]:
         """
         Detect long boring regions in the source stream.
@@ -440,7 +442,7 @@ class EffectsEngine:
 
         silences, freezes, blacks = ff.detect_boring_combined(
             source, 0.0, total_duration,
-            noise_floor_db=-38.0,
+            noise_floor_db=noise_floor_db,
             silence_min=silence_seconds,
             freeze_min=freeze_seconds,
             black_min=black_seconds,
@@ -491,6 +493,7 @@ class EffectsEngine:
         freeze_seconds: float = 6.0,
         black_seconds: float = 2.0,
         min_keep_seconds: float = 8.0,
+        noise_floor_db: float = -38.0,
     ) -> tuple[list[tuple[float, float]], list[dict]]:
         """Return keep ranges that skip long boring sections."""
         boring = self.auto_detect_boring_ranges(
@@ -499,6 +502,7 @@ class EffectsEngine:
             silence_seconds=silence_seconds,
             freeze_seconds=freeze_seconds,
             black_seconds=black_seconds,
+            noise_floor_db=noise_floor_db,
         )
         keep_ranges: list[tuple[float, float]] = []
         cursor = 0.0
@@ -521,6 +525,7 @@ class EffectsEngine:
         min_keep_seconds: float,
         action: str = "remove",
         speed_factor: float = 8.0,
+        noise_floor_db: float = -38.0,
     ) -> tuple[list[dict], list[dict]]:
         """
         Build an edit plan.
@@ -543,6 +548,7 @@ class EffectsEngine:
             silence_seconds=silence_seconds,
             freeze_seconds=freeze_seconds,
             black_seconds=black_seconds,
+            noise_floor_db=noise_floor_db,
         )
         if not boring:
             return [
@@ -691,8 +697,11 @@ class EffectsEngine:
             source,
             clip.start_time,
             clip.duration,
-            noise_floor_db=-40.0,
+            noise_floor_db=float(settings.get("automation_noise_floor_db", -40.0)),
             min_silence_s=0.2,
+            voice_band_low_hz=float(settings.get("voice_band_low_hz", 180.0)),
+            voice_band_high_hz=float(settings.get("voice_band_high_hz", 3400.0)),
+            voice_sensitivity=float(settings.get("voice_sensitivity", 1.0)),
         )
         captions = []
         idx = 1

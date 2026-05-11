@@ -413,15 +413,91 @@ class ControlPanel(QDockWidget):
     def _build_view_section(self) -> QGroupBox:
         """VIEW: Proxy, Timeline, Help, Undo/Redo."""
         group, layout = self._create_section("VIEW & TOOLS")
-        
-        layout.addWidget(self._create_button("Toggle Proxy Mode", "toggle_proxy", "Ctrl+P"))
+
+        # Proper checkable proxy button — state is owned here and passed to main_window
+        self._proxy_btn = QPushButton("Proxy Mode: OFF")
+        self._proxy_btn.setCheckable(True)
+        self._proxy_btn.setChecked(False)
+        self._proxy_btn.setToolTip(
+            "Ctrl+P — Generate a 480p preview copy for smooth 4K scrubbing"
+        )
+        self._proxy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._proxy_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #1a2a1a;
+                color: {COLOURS['text_secondary']};
+                border: 1px solid {COLOURS['border']};
+                border-radius: 3px;
+                padding: 4px 8px;
+                font-weight: bold;
+                font-size: 9px;
+            }}
+            QPushButton:checked {{
+                background-color: #2d5a1a;
+                color: {COLOURS['accent_gold']};
+                border: 1px solid {COLOURS['accent_gold']};
+            }}
+            QPushButton:hover {{
+                background-color: #2d4a2d;
+                border: 1px solid {COLOURS['accent_gold']};
+            }}
+        """)
+        self._proxy_btn.toggled.connect(self._on_proxy_toggled)
+        layout.addWidget(self._proxy_btn)
+
+        # Theme toggle
+        self._theme_btn = QPushButton("Theme: Dark")
+        self._theme_btn.setCheckable(True)
+        self._theme_btn.setChecked(False)
+        self._theme_btn.setToolTip("Switch between dark and light theme")
+        self._theme_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._theme_btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #1a2a1a;
+                color: {COLOURS['text_secondary']};
+                border: 1px solid {COLOURS['border']};
+                border-radius: 3px;
+                padding: 4px 8px;
+                font-weight: bold;
+                font-size: 9px;
+            }}
+            QPushButton:checked {{
+                background-color: #3a3a1a;
+                color: #e0d090;
+                border: 1px solid #b0a060;
+            }}
+            QPushButton:hover {{
+                background-color: #2d4a2d;
+                border: 1px solid {COLOURS['accent_gold']};
+            }}
+        """)
+        self._theme_btn.toggled.connect(self._on_theme_toggled)
+        layout.addWidget(self._theme_btn)
+
         layout.addWidget(self._create_button("Fit Timeline", "fit_timeline", "F"))
-        
+
         row_undo = QHBoxLayout()
         row_undo.addWidget(self._create_button("Undo", "undo", "Ctrl+Z"))
         row_undo.addWidget(self._create_button("Redo", "redo", "Ctrl+Y"))
         layout.addLayout(row_undo)
-        
+
         layout.addWidget(self._create_button("Help", "help", "F1"))
-        
+
         return group
+
+    def _on_proxy_toggled(self, checked: bool):
+        self._proxy_btn.setText(f"Proxy Mode: {'ON' if checked else 'OFF'}")
+        # Emit with explicit on/off so main_window never has to guess
+        self.action_triggered.emit(f"set_proxy:{'on' if checked else 'off'}")
+
+    def _on_theme_toggled(self, checked: bool):
+        self._theme_btn.setText(f"Theme: {'Light' if checked else 'Dark'}")
+        self.action_triggered.emit(f"set_theme:{'light' if checked else 'dark'}")
+
+    def set_proxy_state(self, enabled: bool):
+        """Called by main_window to keep button in sync (e.g. on startup)."""
+        # Block signal to avoid feedback loop
+        self._proxy_btn.blockSignals(True)
+        self._proxy_btn.setChecked(enabled)
+        self._proxy_btn.setText(f"Proxy Mode: {'ON' if enabled else 'OFF'}")
+        self._proxy_btn.blockSignals(False)

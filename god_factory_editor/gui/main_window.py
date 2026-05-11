@@ -107,6 +107,9 @@ class MainWindow(QMainWindow):
         # Check for an auto-save recovery file
         QTimer.singleShot(200, self._check_recovery)
         QTimer.singleShot(1200, self._run_startup_maintenance)
+        # First-run wizard — show once, never again
+        if not settings.get("first_run_done", False):
+            QTimer.singleShot(600, self._show_first_run_wizard)
 
     # ── Menu ──────────────────────────────────────────────────────────────────
     def _build_menu(self):
@@ -135,6 +138,12 @@ class MainWindow(QMainWindow):
         self._act_import_subtitles.setShortcut("Ctrl+Shift+T")
         self._act_import_subtitles.triggered.connect(self._import_subtitles)
         file_menu.addAction(self._act_import_subtitles)
+
+        file_menu.addSeparator()
+
+        # ── Recent Files submenu (actually populated from settings) ──
+        self._recent_menu = file_menu.addMenu("Open Recent")
+        self._rebuild_recent_menu()
 
         file_menu.addSeparator()
 
@@ -263,8 +272,18 @@ class MainWindow(QMainWindow):
         self._act_proxy.setShortcut(kb.get("toggle_proxy", "Ctrl+P"))
         self._act_proxy.setCheckable(True)
         self._act_proxy.setChecked(settings.get("proxy_enabled", True))
+        # triggered(checked) passes the new checked bool directly — no ambiguity
         self._act_proxy.triggered.connect(self._toggle_proxy)
         view_menu.addAction(self._act_proxy)
+
+        self._act_theme = QAction("Toggle Light/Dark Theme", self)
+        self._act_theme.setShortcut("Ctrl+T")
+        self._act_theme.setCheckable(True)
+        self._act_theme.setChecked(settings.get("theme", "dark") == "light")
+        self._act_theme.triggered.connect(
+            lambda checked: self._apply_theme("light" if checked else "dark")
+        )
+        view_menu.addAction(self._act_theme)
 
         self._act_fit = QAction("Fit Timeline to Window", self)
         self._act_fit.setShortcut(kb.get("fit_timeline", "F"))
@@ -675,10 +694,13 @@ class MainWindow(QMainWindow):
             self._export_as_single()
         
         # ── VIEW & TOOLS ──────────────────────────────────────────────────────
-        elif action_name == "toggle_proxy":
-            new_state = not settings.get("proxy_enabled", True)
-            self._act_proxy.setChecked(new_state)
-            self._toggle_proxy(new_state)
+        elif action_name == "set_proxy" and param:
+            # Emitted by the checkable proxy button with explicit "on"/"off" — no guessing
+            enabled = (param == "on")
+            self._act_proxy.setChecked(enabled)
+            self._toggle_proxy(enabled)
+        elif action_name == "set_theme" and param:
+            self._apply_theme(param)
         elif action_name == "fit_timeline":
             self._timeline.fit_to_width()
         elif action_name == "undo":
@@ -708,8 +730,10 @@ class MainWindow(QMainWindow):
 
         # Clip list → player seek
         self._clip_list.clip_seek_requested.connect(self._player.seek)
-        self._clip_list.rename_requested.connect(self._do_rename_clip)
-        self._clip_list.delete_requested.connect(self._do_delete_clip)
+        # rename_requested emits (clip_id, new_name) — use both args directly
+        self._clip_list.rename_requested.connect(self._do_rename_clip_with_name)
+        # delete_requested emits a list of ids
+        self._clip_list.delete_requested.connect(self._do_delete_clips)
 
         # Clip manager → update counts
         self._clip_manager.clips_changed.connect(self._on_clips_changed)
@@ -735,6 +759,111 @@ class MainWindow(QMainWindow):
             log.info(f"Open Video dialog selected: {path}")
             settings.set("last_open_dir", str(Path(path).parent))
             self._load_video(Path(path))
+
+    # ── Recent files ──────────────────────────────────────────────────────────
+    def _rebuild_recent_menu(self):
+        self._recent_menu.clear()
+        recents = settings.get("recent_files", [])
+        if not recents:
+            empty_act = QAction("(none)", self)
+            empty_act.setEnabled(False)
+            self._recent_menu.addAction(empty_act)
+            return
+        for entry in recents[:15]:
+            p = Path(entry)
+            act = QAction(p.name, self)
+            act.setToolTip(str(p))
+            act.setData(str(p))
+            act.triggered.connect(lambda checked=False, path=p: self._open_recent(path))
+            self._recent_menu.addAction(act)
+        self._recent_menu.addSeparator()
+        clear_act = QAction("Clear Recent", self)
+        clear_act.triggered.connect(self._clear_recent)
+        self._recent_menu.addAction(clear_act)
+
+    def _open_recent(self, path: Path):
+        if not self._confirm_discard():
+            return
+        if not path.exists():
+            from god_factory_editor.gui.dialogs.error_handler import show_warning
+            show_warning(self, "File Not Found",
+                         f"'{path.name}' no longer exists at:\n{path}")
+            # Remove from recents
+            recents = [r for r in settings.get("recent_files", []) if r != str(path)]
+            settings.set("recent_files", recents)
+            self._rebuild_recent_menu()
+            return
+        if path.suffix.lower() == PROJECT_EXTENSION:
+            self._load_project(path)
+        elif is_video_file(path):
+            self._load_video(path)
+
+    def _add_to_recent(self, path: Path):
+        path_str = str(path)
+        recents = [r for r in settings.get("recent_files", []) if r != path_str]
+        recents.insert(0, path_str)
+        settings.set("recent_files", recents[:20])
+        self._rebuild_recent_menu()
+
+    def _clear_recent(self):
+        settings.set("recent_files", [])
+        self._rebuild_recent_menu()
+
+    # ── Theme ─────────────────────────────────────────────────────────────────
+    def _apply_theme(self, theme: str):
+        from PySide6.QtWidgets import QApplication
+        from god_factory_editor.config import STYLES_DIR
+        settings.set("theme", theme)
+        qss_name = "light.qss" if theme == "light" else "dark.qss"
+        qss_path = STYLES_DIR / qss_name
+        if qss_path.exists():
+            QApplication.instance().setStyleSheet(
+                qss_path.read_text(encoding="utf-8")
+            )
+        else:
+            # light.qss doesn't exist yet — generate minimal light theme inline
+            if theme == "light":
+                QApplication.instance().setStyleSheet("""
+                    QMainWindow, QWidget { background-color: #f5f5f0; color: #1a1a1a; }
+                    QMenuBar { background-color: #e8e8e0; color: #1a1a1a; }
+                    QMenu { background-color: #f0f0e8; color: #1a1a1a; border: 1px solid #c0c0b0; }
+                    QMenu::item:selected { background-color: #c8d4a0; }
+                    QToolBar { background-color: #e8e8e0; border-bottom: 1px solid #c0c0b0; }
+                    QDockWidget { background-color: #f0f0e8; color: #1a1a1a; }
+                    QGroupBox { color: #4a7020; border: 1px solid #8fae3b; border-radius: 4px; }
+                    QLabel { color: #1a1a1a; }
+                    QPushButton { background-color: #e0e8d0; color: #2a4010; border: 1px solid #8fae3b;
+                                  border-radius: 3px; padding: 4px 8px; }
+                    QPushButton:hover { background-color: #c8d4a0; }
+                    QTableWidget { background-color: #fafaf5; color: #1a1a1a;
+                                   gridline-color: #d0d0c0; }
+                    QHeaderView::section { background-color: #e0e0d0; color: #1a1a1a; }
+                    QScrollBar:vertical { background-color: #e0e0d0; width: 10px; }
+                    QScrollBar::handle:vertical { background-color: #8fae3b; border-radius: 5px; }
+                    QStatusBar { background-color: #e8e8e0; color: #1a1a1a; }
+                    QSlider::groove:horizontal { background-color: #d0d0c0; height: 4px; }
+                    QSlider::handle:horizontal { background-color: #8fae3b; width: 12px;
+                                                 margin: -4px 0; border-radius: 6px; }
+                """)
+            else:
+                # Fall back to loading the dark qss
+                dark_path = STYLES_DIR / "dark.qss"
+                if dark_path.exists():
+                    QApplication.instance().setStyleSheet(
+                        dark_path.read_text(encoding="utf-8")
+                    )
+        # Sync menu and control panel buttons
+        is_light = (theme == "light")
+        if hasattr(self, "_act_theme"):
+            self._act_theme.setChecked(is_light)
+        if hasattr(self, "_control_panel") and hasattr(self._control_panel, "_theme_btn"):
+            self._control_panel._theme_btn.blockSignals(True)
+            self._control_panel._theme_btn.setChecked(is_light)
+            self._control_panel._theme_btn.setText(f"Theme: {'Light' if is_light else 'Dark'}")
+            self._control_panel._theme_btn.blockSignals(False)
+        self.statusBar().showMessage(
+            f"Theme switched to {'light' if is_light else 'dark'}.", 2500
+        )
 
     def open_project_path(self, path: Path):
         """Open a project file directly (used by main.py for CLI/file-association)."""
@@ -1019,6 +1148,12 @@ class MainWindow(QMainWindow):
         self._update_title()
         self._sb_file.setText(path.name)
         self._update_proxy_badge()
+        # Sync proxy button state in the control panel
+        proxy_on = settings.get("proxy_enabled", True)
+        if hasattr(self, "_control_panel"):
+            self._control_panel.set_proxy_state(proxy_on)
+        # Add to recent files
+        self._add_to_recent(path)
         log.info(f"Loaded video: {path}")
 
     def _load_project(self, path: Path):
@@ -1057,6 +1192,7 @@ class MainWindow(QMainWindow):
         self._preview_file = None
         self._unsaved      = False
         self._update_title()
+        self._add_to_recent(path)
         self.statusBar().showMessage(f"Loaded project: {path.name}", 3000)
 
     # ── Mark In / Out ─────────────────────────────────────────────────────────
@@ -1119,14 +1255,30 @@ class MainWindow(QMainWindow):
             )
 
     def _delete_selected_clip(self):
-        for cid in list(self._clip_manager.selected_clip_ids):
-            self._do_delete_clip(cid)
+        self._do_delete_clips(list(self._clip_manager.selected_clip_ids))
+
+    def _do_delete_clips(self, clip_ids: list):
+        """Delete a list of clip ids after confirmation."""
+        if not clip_ids:
+            return
+        clips = [self._clip_manager.get_clip(cid) for cid in clip_ids]
+        clips = [c for c in clips if c]
+        if not clips:
+            return
+        if len(clips) == 1:
+            if not ask_yes_no(self, "Delete Clip",
+                              f"Delete '{clips[0].name}'?"):
+                return
+        else:
+            if not ask_yes_no(self, "Delete Clips",
+                              f"Delete {len(clips)} selected clips?"):
+                return
+        for clip in clips:
+            self._clip_manager.remove_clip(clip.id)
 
     def _do_delete_clip(self, clip_id: str):
-        clip = self._clip_manager.get_clip(clip_id)
-        if clip and ask_yes_no(self, "Delete Clip",
-                               f"Delete '{clip.name}'? This cannot be undone."):
-            self._clip_manager.remove_clip(clip_id)
+        """Delete a single clip by id (used by keyboard Delete key)."""
+        self._do_delete_clips([clip_id])
 
     def _rename_selected_clip(self):
         sel = self._clip_manager.selected_clip_ids
@@ -1135,12 +1287,18 @@ class MainWindow(QMainWindow):
         self._do_rename_clip(next(iter(sel)))
 
     def _do_rename_clip(self, clip_id: str):
+        """Rename a clip by opening a name dialog (used by F2 shortcut)."""
         clip = self._clip_manager.get_clip(clip_id)
         if not clip:
             return
         name, ok = QInputDialog.getText(self, "Rename Clip", "New name:", text=clip.name)
         if ok and name.strip():
             self._clip_manager.update_clip(clip_id, name=name.strip())
+
+    def _do_rename_clip_with_name(self, clip_id: str, new_name: str):
+        """Apply a new name that was already entered inline in the clip list."""
+        if new_name.strip():
+            self._clip_manager.update_clip(clip_id, name=new_name.strip())
 
     def _toggle_loop(self):
         sel = self._clip_manager.selected_clip_ids
@@ -1702,11 +1860,13 @@ class MainWindow(QMainWindow):
                   "Review them on the timeline and trim as needed.")
 
     # ── Proxy ─────────────────────────────────────────────────────────────────
-    def _toggle_proxy(self, enabled: bool = None):
-        if enabled is None:
-            enabled = not settings.get("proxy_enabled", True)
+    def _toggle_proxy(self, enabled: bool):
+        """Enable or disable proxy mode. Always called with an explicit bool."""
         settings.set("proxy_enabled", enabled)
         self._act_proxy.setChecked(enabled)
+        # Keep control-panel button in sync
+        if hasattr(self, "_control_panel"):
+            self._control_panel.set_proxy_state(enabled)
         self._update_proxy_badge()
         if enabled and self._video_path:
             self._proxy_manager.ensure_proxy(self._video_path)
@@ -2107,6 +2267,64 @@ class MainWindow(QMainWindow):
                   "Built for cutting 4K gaming live streams into individual "
                   "challenge highlight videos.<br><br>"
                   "Press <b>F1</b> at any time to open Help.")
+
+    # ── First-run wizard ──────────────────────────────────────────────────────
+    def _show_first_run_wizard(self):
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton, QHBoxLayout
+        from PySide6.QtCore import Qt
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Welcome to The God Factory Video Editor")
+        dlg.setMinimumWidth(500)
+        dlg.setModal(True)
+
+        layout = QVBoxLayout(dlg)
+        layout.setSpacing(14)
+
+        title = QLabel("<h2>Welcome! Here's how to make your first clip:</h2>")
+        title.setWordWrap(True)
+        layout.addWidget(title)
+
+        steps = [
+            ("1. Load your stream", "Drag a video file onto the window, or use <b>File → Open Video</b>"),
+            ("2. Play and find your moment", "Press <b>Space</b> to play/pause. Use <b>← →</b> to jump 5 seconds, <b>Shift+← →</b> to jump 30 seconds."),
+            ("3. Mark the start", "When you reach the start of a clip you want, press <b>I</b>. A gold bar appears on the timeline."),
+            ("4. Mark the end", "When you reach the end of the segment, press <b>O</b>. The clip is created instantly."),
+            ("5. Rename if you want", "Select the clip and press <b>F2</b> to give it a proper name."),
+            ("6. Export", "Tick the checkbox next to the clips you want, then press <b>Ctrl+E</b> (Export Selected).<br>"
+                          "Choose a folder and hit <b>Start Export</b>. Fast mode is near-instant — no re-encoding."),
+        ]
+        for step_title, step_body in steps:
+            row = QHBoxLayout()
+            num_lbl = QLabel(f"<b>{step_title}</b>")
+            num_lbl.setMinimumWidth(170)
+            row.addWidget(num_lbl)
+            body_lbl = QLabel(step_body)
+            body_lbl.setWordWrap(True)
+            row.addWidget(body_lbl, 1)
+            layout.addLayout(row)
+
+        note = QLabel(
+            "<i>Clips are segments you <u>keep</u> and export. Deleting a clip removes the marker, "
+            "not the source video. You can always undo (Ctrl+Z).</i>"
+        )
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #8b949e;")
+        layout.addWidget(note)
+
+        btn_row = QHBoxLayout()
+        help_btn = QPushButton("Open Full Help (F1)")
+        help_btn.clicked.connect(lambda: (dlg.accept(), self._show_help("welcome")))
+        btn_row.addWidget(help_btn)
+        btn_row.addStretch()
+        got_it_btn = QPushButton("Got it — let's go!")
+        got_it_btn.setDefault(True)
+        got_it_btn.clicked.connect(dlg.accept)
+        btn_row.addWidget(got_it_btn)
+        layout.addLayout(btn_row)
+
+        dlg.exec()
+        settings.set("first_run_done", True)
 
     # ── Misc ──────────────────────────────────────────────────────────────────
     @staticmethod

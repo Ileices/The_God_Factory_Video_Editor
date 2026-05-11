@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtGui import QAction, QKeySequence, QDragEnterEvent, QDropEvent
 
 from god_factory_editor.config import (
-    APP_NAME, APP_VERSION, PROJECT_EXTENSION, settings, COLOURS,
+    APP_NAME, APP_VERSION, PROJECT_EXTENSION, settings, COLOURS, SOCIAL_LINKS,
 )
 from god_factory_editor.models.project_data import ProjectData
 from god_factory_editor.models.clip import Clip
@@ -350,6 +350,31 @@ class MainWindow(QMainWindow):
         act_about = QAction(f"About {APP_NAME}", self)
         act_about.triggered.connect(self._show_about)
         help_menu.addAction(act_about)
+
+        # ── Community / Promo menu ─────────────────────────────────────────
+        community_menu = mb.addMenu("Community")
+
+        act_youtube = QAction("YouTube Channel", self)
+        act_youtube.setToolTip("Watch and subscribe on YouTube")
+        act_youtube.triggered.connect(lambda: self._open_social("youtube"))
+        community_menu.addAction(act_youtube)
+
+        act_discord = QAction("Discord Server", self)
+        act_discord.setToolTip("Join the Discord community")
+        act_discord.triggered.connect(lambda: self._open_social("discord"))
+        community_menu.addAction(act_discord)
+
+        community_menu.addSeparator()
+
+        act_paypal = QAction("Donate via PayPal", self)
+        act_paypal.setToolTip("Support development with a PayPal donation")
+        act_paypal.triggered.connect(lambda: self._open_social("paypal"))
+        community_menu.addAction(act_paypal)
+
+        act_cashapp = QAction("Donate via Cash App", self)
+        act_cashapp.setToolTip("Support development via Cash App")
+        act_cashapp.triggered.connect(lambda: self._open_social("cashapp"))
+        community_menu.addAction(act_cashapp)
 
     # ── Toolbar ───────────────────────────────────────────────────────────────
     def _build_toolbar(self):
@@ -2267,6 +2292,13 @@ class MainWindow(QMainWindow):
                   "Built for cutting 4K gaming live streams into individual "
                   "challenge highlight videos.<br><br>"
                   "Press <b>F1</b> at any time to open Help.")
+
+    def _open_social(self, key: str):
+        """Open a social/donation link from SOCIAL_LINKS in the default browser."""
+        import webbrowser
+        url = SOCIAL_LINKS.get(key, "")
+        if url:
+            webbrowser.open(url)
 
     # ── First-run wizard ──────────────────────────────────────────────────────
     def _show_first_run_wizard(self):

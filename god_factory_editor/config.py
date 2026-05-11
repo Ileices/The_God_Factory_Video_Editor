@@ -108,6 +108,15 @@ DEFAULTS = {
     },
 }
 
+# ─── Social / Promo Links ─────────────────────────────────────────────────────
+# Update these four URLs to your real links.
+SOCIAL_LINKS = {
+    "youtube":  "https://www.youtube.com/@Ileices",
+    "discord":  "https://discord.gg/REPLACE_WITH_YOUR_INVITE",
+    "paypal":   "https://paypal.me/REPLACE_WITH_YOUR_USERNAME",
+    "cashapp":  "https://cash.app/$REPLACE_WITH_YOUR_CASHTAG",
+}
+
 # ─── Export Presets ───────────────────────────────────────────────────────────
 EXPORT_PRESETS = {
     "fast": {

@@ -47,7 +47,6 @@ class ExportDialog(QDialog):
 
         self._build_ui()
         self._connect_engine()
-        self._update_space_estimate()
 
     # ── UI ────────────────────────────────────────────────────────────────────
     def _build_ui(self):
@@ -92,12 +91,12 @@ class ExportDialog(QDialog):
         self._preset_desc = QLabel()
         self._preset_desc.setStyleSheet("color: #8b949e; font-size: 11px;")
         form.addRow("", self._preset_desc)
-        self._on_preset_changed()
 
         # Space estimate
         self._space_lbl = QLabel()
         self._space_lbl.setStyleSheet("font-size: 11px;")
         form.addRow("Disk Space:", self._space_lbl)
+        self._on_preset_changed()
 
         main.addWidget(grp)
 

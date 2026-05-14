@@ -111,10 +111,10 @@ DEFAULTS = {
 # ─── Social / Promo Links ─────────────────────────────────────────────────────
 # Update these four URLs to your real links.
 SOCIAL_LINKS = {
-    "youtube":  "https://www.youtube.com/@Ileices",
-    "discord":  "https://discord.gg/REPLACE_WITH_YOUR_INVITE",
-    "paypal":   "https://paypal.me/REPLACE_WITH_YOUR_USERNAME",
-    "cashapp":  "https://cash.app/$REPLACE_WITH_YOUR_CASHTAG",
+    "youtube":  "https://www.youtube.com/@TheGodFactory",
+    "discord":  "https://discord.gg/bAzFxZuWMw",
+    "paypal":   "https://www.paypal.com/qrcodes/managed/612c1610-5df1-48f9-8326-9b631fdeaf6c",
+    "cashapp":  "https://cash.app/$RizzyRoz",
 }
 
 # ─── Export Presets ───────────────────────────────────────────────────────────
@@ -132,7 +132,7 @@ EXPORT_PRESETS = {
         "description": "Frame-perfect cuts. Slower. Uses H.264.",
         "video_codec": "libx264",
         "audio_codec": "aac",
-        "crf": 18,
+        "crf": 16,
         "preset_speed": "veryfast",
         "resolution": None,
         "accurate_seek": True,
@@ -142,16 +142,19 @@ EXPORT_PRESETS = {
         "description": "Optimised for YouTube upload. H.264, 1080p max.",
         "video_codec": "libx264",
         "audio_codec": "aac",
-        "crf": 20,
+        "crf": 18,
         "preset_speed": "fast",
         "resolution": [1920, 1080],
         "accurate_seek": True,
     },
     "archive": {
         "label": "Archive 4K (Lossless)",
-        "description": "Full quality 4K copy. Large file sizes.",
+        "description": "Full quality archive: stream-copy when possible; lossless re-encode when effects/transitions are used.",
         "video_codec": "copy",
         "audio_codec": "copy",
+        "reencode_video_codec": "libx264",
+        "crf": 0,
+        "preset_speed": "slow",
         "resolution": None,
         "accurate_seek": False,
     },

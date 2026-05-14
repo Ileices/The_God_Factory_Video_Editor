@@ -16,7 +16,7 @@ from typing import Optional, List
 from PySide6.QtCore import Qt, QTimer, QSettings, QSize
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QSplitter, QVBoxLayout, QHBoxLayout,
-    QLabel, QStatusBar, QToolBar, QFileDialog, QMessageBox,
+    QLabel, QPushButton, QStatusBar, QToolBar, QFileDialog, QMessageBox,
     QInputDialog, QScrollArea, QDialog,
 )
 from PySide6.QtGui import QAction, QKeySequence, QDragEnterEvent, QDropEvent
@@ -320,6 +320,11 @@ class MainWindow(QMainWindow):
         act_return_source.triggered.connect(self._return_to_source_preview)
         fx_menu.addAction(act_return_source)
 
+        act_preview_sequence = QAction("Preview All Clips as Sequence…", self)
+        act_preview_sequence.setShortcut(kb.get("preview_sequence", "Ctrl+Shift+A"))
+        act_preview_sequence.triggered.connect(self._preview_clip_sequence)
+        fx_menu.addAction(act_preview_sequence)
+
         fx_menu.addSeparator()
 
         act_auto_trans = QAction("Auto-Suggest Transitions…", self)
@@ -435,6 +440,43 @@ class MainWindow(QMainWindow):
         self._workflow_banner.setCursor(Qt.PointingHandCursor)
         self._workflow_banner.mousePressEvent = lambda e: self._workflow_banner.hide()
         outer.addWidget(self._workflow_banner)
+
+        # Preview-mode banner — visible only when playing rendered previews.
+        self._preview_banner = QWidget()
+        self._preview_banner.setObjectName("previewBanner")
+        self._preview_banner.setStyleSheet(
+            "QWidget#previewBanner {"
+            "  background: #3a2414;"
+            "  border-bottom: 1px solid #8b5a2b;"
+            "}"
+            "QWidget#previewBanner QLabel {"
+            "  color: #ffd9a1;"
+            "  font-size: 11px;"
+            "}"
+            "QWidget#previewBanner QPushButton {"
+            "  background: #8b5a2b;"
+            "  color: #ffffff;"
+            "  border: 1px solid #b97a3f;"
+            "  border-radius: 4px;"
+            "  padding: 2px 10px;"
+            "}"
+            "QWidget#previewBanner QPushButton:hover {"
+            "  background: #a3682f;"
+            "}"
+        )
+        preview_row = QHBoxLayout(self._preview_banner)
+        preview_row.setContentsMargins(10, 3, 10, 3)
+        preview_row.setSpacing(10)
+        self._preview_banner_label = QLabel(
+            "Preview mode is active. Press Esc or click Return To Timeline."
+        )
+        preview_row.addWidget(self._preview_banner_label)
+        preview_row.addStretch()
+        self._preview_banner_btn = QPushButton("Return To Timeline")
+        self._preview_banner_btn.clicked.connect(self._return_to_source_preview)
+        preview_row.addWidget(self._preview_banner_btn)
+        self._preview_banner.hide()
+        outer.addWidget(self._preview_banner)
 
         # Top split: player (left) + clip list (right)
         top_split = QSplitter(Qt.Horizontal)
@@ -759,6 +801,10 @@ class MainWindow(QMainWindow):
         self._clip_list.rename_requested.connect(self._do_rename_clip_with_name)
         # delete_requested emits a list of ids
         self._clip_list.delete_requested.connect(self._do_delete_clips)
+
+        # Effects panel signals from clip list
+        self._clip_list.effects_split_requested.connect(self._split_clip)
+        self._clip_list.effects_popout_requested.connect(self._open_clip_effects)
 
         # Clip manager → update counts
         self._clip_manager.clips_changed.connect(self._on_clips_changed)
@@ -1147,6 +1193,7 @@ class MainWindow(QMainWindow):
         self._analysis_end = None
         self._excluded_ranges.clear()
         self._preview_file = None
+        self._set_preview_mode_ui(False)
         self._project = ProjectData()
         self._project.video = meta
         self._project_path = None
@@ -1179,6 +1226,8 @@ class MainWindow(QMainWindow):
             self._control_panel.set_proxy_state(proxy_on)
         # Add to recent files
         self._add_to_recent(path)
+        # Pass source to inline effects panel
+        self._clip_list.set_effects_source(path)
         log.info(f"Loaded video: {path}")
 
     def _load_project(self, path: Path):
@@ -1669,7 +1718,7 @@ class MainWindow(QMainWindow):
             picture_saturation=clip.picture_saturation,
             picture_gamma=clip.picture_gamma,
             picture_sharpen=clip.picture_sharpen,
-            crf=20,
+            crf=16,
             resolution=None,
         )
         dlg.set_progress(100, 100)
@@ -1684,6 +1733,7 @@ class MainWindow(QMainWindow):
         self._player.load(out_path)
         self._player.seek(0.0)
         self._player.play()
+        self._set_preview_mode_ui(True, "Rendered clip effects preview")
         self.statusBar().showMessage(
             f"Previewing rendered effects for '{clip.name}' ({self._fmt(preview_len)}). Use Effects -> Return To Source Playback when done.",
             9000,
@@ -1692,15 +1742,118 @@ class MainWindow(QMainWindow):
     def _return_to_source_preview(self):
         if not self._video_path:
             return
-        playback_path = self._video_path
-        if settings.get("proxy_enabled", True):
-            proxy = self._proxy_manager.get_proxy_path(self._video_path)
-            if proxy and proxy.exists():
-                playback_path = proxy
-        self._player.load(playback_path)
+        # Return to full-quality source to avoid the impression of quality loss
+        # after rendered preview playback.
+        self._player.load(self._video_path)
         self._player.seek(self._preview_restore_pos)
         self._preview_file = None
-        self.statusBar().showMessage("Returned to source playback.", 3000)
+        self._set_preview_mode_ui(False)
+        self.statusBar().showMessage("Returned to full-quality source playback.", 3000)
+
+    def _preview_clip_sequence(self):
+        """Export checked clips (with effects) to temp files and play the concat."""
+        if not self._video_path:
+            show_info(self, "No Video", "Load a video first.")
+            return
+        all_clips = self._clip_manager.clips
+        if not all_clips:
+            show_info(self, "No Clips", "Add some clips first.")
+            return
+        checked_ids = set(self._clip_list.checked_clip_ids())
+        clips = [c for c in all_clips if c.id in checked_ids] if checked_ids else list(all_clips)
+        if not clips:
+            show_info(self, "No Clips Selected", "Check at least one clip to preview.")
+            return
+
+        from god_factory_editor.gui.dialogs.progress_dialog import ProgressDialog
+        from PySide6.QtWidgets import QApplication
+        import tempfile
+
+        tmp_dir = Path(tempfile.mkdtemp())
+        out_path = tmp_dir / "sequence_preview.mp4"
+
+        progress = ProgressDialog(
+            title="Building Sequence Preview",
+            status_text=f"Rendering {len(clips)} clip(s) — this may take a moment…",
+            parent=self,
+            can_cancel=False,
+        )
+        progress.show()
+        QApplication.processEvents()
+
+        # Export each clip to a temp segment file
+        segments = []
+        for i, clip in enumerate(clips):
+            seg_path = tmp_dir / f"seg_{i:04d}.mp4"
+            progress.set_status(f"Rendering clip {i+1}/{len(clips)}: {clip.name or clip.id}…")
+            progress.set_progress(i, len(clips))
+            QApplication.processEvents()
+            ok = ffmpeg.export_clip_with_effects(
+                source=self._video_path,
+                start=clip.start_time,
+                duration=clip.duration,
+                output=seg_path,
+                speed=clip.speed,
+                voice_boost_db=clip.audio_voice_boost,
+                game_duck_db=clip.audio_game_duck,
+                normalize=clip.audio_normalize,
+                denoise=clip.audio_denoise,
+                picture_brightness=clip.picture_brightness,
+                picture_contrast=clip.picture_contrast,
+                picture_saturation=clip.picture_saturation,
+                picture_gamma=clip.picture_gamma,
+                picture_sharpen=clip.picture_sharpen,
+                crf=17,
+                resolution=None,
+            )
+            if ok and seg_path.exists():
+                segments.append({
+                    "path": seg_path,
+                    "transition": clip.transition_out,
+                    "transition_duration": clip.transition_duration,
+                })
+
+        if not segments:
+            progress.on_finished()
+            show_error(self, "Preview Failed", "No segments rendered successfully.")
+            return
+
+        progress.set_status("Concatenating segments…")
+        progress.set_progress(len(clips), len(clips) + 1)
+        QApplication.processEvents()
+
+        ok_concat = ffmpeg.export_clips_concat(
+            segments=segments,
+            output=out_path,
+            crf=17,
+        )
+
+        progress.set_progress(len(clips) + 1, len(clips) + 1)
+        progress.on_finished()
+
+        if not ok_concat or not out_path.exists():
+            show_error(self, "Preview Failed",
+                       "Could not concatenate clips. Check FFmpeg logs.")
+            return
+
+        self._preview_restore_pos = self._player.position()
+        self._preview_file = out_path
+        self._player.load(out_path)
+        self._player.seek(0.0)
+        self._player.play()
+        self.statusBar().showMessage(
+            f"Sequence preview: {len(segments)} clip(s).  "
+            "Effects → Return To Source Playback when done.", 9000
+        )
+
+    def _set_preview_mode_ui(self, active: bool, mode_label: str = ""):
+        """Show or hide preview affordances so users can always return quickly."""
+        self._preview_banner.setVisible(active)
+        if active:
+            detail = f" ({mode_label})" if mode_label else ""
+            self._preview_banner_label.setText(
+                f"Preview mode is active{detail}. Press Esc or click Return To Timeline."
+            )
 
     def _open_automation_wizard(self):
         if not self._video_path or not self._project or not self._project.video:
@@ -2265,6 +2418,11 @@ class MainWindow(QMainWindow):
         key = event.key()
         mods = event.modifiers()
         Qt_Key = Qt
+
+        if key == Qt.Key_Escape and self._preview_file is not None:
+            self._return_to_source_preview()
+            event.accept()
+            return
 
         if key == Qt.Key_Space:
             self._player.toggle_play()

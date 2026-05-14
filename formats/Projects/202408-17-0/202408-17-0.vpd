@@ -1,0 +1,91 @@
+{
+    "timeline": {
+        "title": "MainTimeline",
+        "type": "MainTimeline",
+        "status": 0,
+        "subitems": [
+            {
+                "title": "Video Track",
+                "type": "MainVideoTrack",
+                "status": 0,
+                "tstart": 0.0,
+                "tduration": 1.7976931348623157e308,
+                "context": 0.0,
+                "opacity": 100,
+                "mute": false
+            },
+            {
+                "title": "Overlay Track",
+                "type": "OverlayTrack",
+                "status": 0,
+                "tstart": 0.0,
+                "tduration": 1.7976931348623157e308,
+                "context": 0.0,
+                "opacity": 100,
+                "mute": false
+            },
+            {
+                "title": "Audio Track",
+                "type": "AudioTrack",
+                "status": 0,
+                "tstart": 0.0,
+                "tduration": 1.7976931348623157e308,
+                "context": 0.0,
+                "opacity": 100,
+                "mute": false
+            }
+        ],
+        "tstart": 0.0,
+        "tduration": 1.7976931348623157e308,
+        "context": 0.0,
+        "connect": {}
+    },
+    "projinfo": {
+        "name": "202408-17-0",
+        "projectfile": "C:/Users/lokee/Videos/VideoProc Vlogger/Projects/202408-17-0/202408-17-0.vpd",
+        "savetime": {
+            "year": 2024,
+            "month": 8,
+            "day": 19,
+            "hour": 11,
+            "minute": 59,
+            "second": 49
+        },
+        "player": {
+            "version": 0,
+            "frameRateNum": 25,
+            "frameRateDen": 1,
+            "resolutionW": 1920,
+            "resolutionH": 1080,
+            "clearR": 0.0,
+            "clearG": 0.0,
+            "clearB": 0.0,
+            "clearA": 1.0,
+            "showRefline": true,
+            "lockRefline": false,
+            "refLines": [],
+            "volume": 1.0
+        }
+    },
+    "videolist": {
+        "title": "Video",
+        "type": "ResourceLists",
+        "status": 0
+    },
+    "audiolist": {
+        "title": "Music",
+        "type": "ResourceLists",
+        "status": 0
+    },
+    "imagelist": {
+        "title": "Picture",
+        "type": "ResourceLists",
+        "status": 0,
+        "scapegoat": []
+    },
+    "subtitlelist": {
+        "title": "Subtitle",
+        "type": "ResourceLists",
+        "status": 0
+    }
+}

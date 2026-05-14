@@ -1,0 +1,52 @@
+{
+    "environment": {
+        "audoSnap": 1,
+        "blockMovable": 1,
+        "timelinePercent": 40.0,
+        "timelinePlayPos": 268150.0,
+        "mediaIconSize": 1,
+        "mediaSortType": 0,
+        "timelineVisibleStart": 0.0,
+        "timelineVisibleDuration": 602592.5925925925,
+        "Adsorbed": true,
+        "AllTrackLocked": false,
+        "General Movie path": "C:/Users/lokee/Videos",
+        "General Music path": "C:/Users/lokee/Music",
+        "General Image path": "C:/Users/lokee/Pictures",
+        "General Subtitle path": "C:/Users/lokee/Videos",
+        "expFormat": "MP4",
+        "expHigQua": false,
+        "expQuality": -1,
+        "expVCodec": "",
+        "expFPSNum": 30,
+        "expFPSDen": 1,
+        "expBitTyps": -1,
+        "expACodec": "",
+        "expAChannel": "",
+        "expSample": -1,
+        "expABitrate": -1,
+        "playerRuler": false,
+        "SortInfo": [
+            {
+                "PageIndex": 0,
+                "Sorttype": 2,
+                "Sortorder": false
+            },
+            {
+                "PageIndex": 1,
+                "Sorttype": 2,
+                "Sortorder": true
+            },
+            {
+                "PageIndex": 2,
+                "Sorttype": 0,
+                "Sortorder": true
+            },
+            {
+                "PageIndex": 3,
+                "Sorttype": 0,
+                "Sortorder": true
+            }
+        ]
+    }
+}

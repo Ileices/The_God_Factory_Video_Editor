@@ -203,7 +203,18 @@ class ExportEngine(QThread):
             ) + "_compilation.mp4"
             out_path = ensure_unique_path(self._output_dir / out_name)
             crf = preset.get("crf", 18)
-            ok = self._ff.export_clips_concat(segments, out_path, crf=crf)
+            encode_codec = preset.get(
+                "reencode_video_codec",
+                preset.get("video_codec", "auto"),
+            )
+            preset_speed = preset.get("preset_speed", "p4")
+            ok = self._ff.export_clips_concat(
+                segments,
+                out_path,
+                crf=crf,
+                video_codec=encode_codec,
+                speed_preset=preset_speed,
+            )
             if ok:
                 success_paths.append(out_path)
                 self.clip_done.emit(out_name, out_path)
@@ -249,6 +260,7 @@ class ExportEngine(QThread):
 
         if needs_effects or video_codec != "copy":
             # Always re-encode when effects are active
+            encode_codec = preset.get("reencode_video_codec", video_codec)
             result = self._ff.export_clip_with_effects(
                 source=self._source,
                 start=clip.start_time,
@@ -265,6 +277,8 @@ class ExportEngine(QThread):
                 picture_gamma=clip.picture_gamma,
                 picture_sharpen=clip.picture_sharpen,
                 crf=preset.get("crf", 18),
+                video_codec=encode_codec,
+                speed_preset=preset.get("preset_speed", "p4"),
                 resolution=preset.get("resolution"),
             )
         else:

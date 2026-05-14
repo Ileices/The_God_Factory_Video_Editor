@@ -12,7 +12,7 @@ from PySide6.QtGui import QColor, QBrush, QFont, QPixmap
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTableWidget, QTableWidgetItem,
     QPushButton, QLabel, QHeaderView, QAbstractItemView, QMenu,
-    QLineEdit, QSizePolicy,
+    QLineEdit, QSizePolicy, QSplitter,
 )
 
 from god_factory_editor.core.clip_manager import ClipManager
@@ -20,6 +20,7 @@ from god_factory_editor.models.clip import Clip
 from god_factory_editor.utils.time_utils import seconds_to_str
 from god_factory_editor.config import COLOURS
 from god_factory_editor.utils.thumbnail_gen import ThumbnailGenerator
+from god_factory_editor.gui.clip_effects_panel import ClipEffectsPanel
 
 
 _STATUS_COLOURS = {
@@ -53,6 +54,8 @@ class ClipListWidget(QWidget):
     selection_changed = Signal(list)
     rename_requested = Signal(str, str)
     delete_requested = Signal(list)
+    effects_split_requested = Signal()
+    effects_popout_requested = Signal(str)
 
     def __init__(self, clip_manager: ClipManager, parent=None):
         super().__init__(parent)
@@ -66,13 +69,25 @@ class ClipListWidget(QWidget):
         self._build_ui()
         self._cm.clips_changed.connect(self._refresh)
         self._cm.selection_changed.connect(self._sync_selection)
+        self._cm.selection_changed.connect(self._on_manager_selection_changed)
         self._refresh()
 
     # ── Build ─────────────────────────────────────────────────────────────────
     def _build_ui(self):
-        layout = QVBoxLayout(self)
+        # Outer layout holds a vertical splitter: clip list on top, effects panel on bottom
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        self._vsplit = QSplitter(Qt.Vertical)
+        outer.addWidget(self._vsplit)
+
+        # Top half — existing clip list content
+        top_widget = QWidget()
+        layout = QVBoxLayout(top_widget)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
+        self._vsplit.addWidget(top_widget)
 
         # Header
         hdr = QHBoxLayout()
@@ -156,6 +171,41 @@ class ClipListWidget(QWidget):
         self._del_btn.setToolTip("Delete selected clips (cannot be undone from here; use Ctrl+Z)")
         bar.addWidget(self._del_btn)
         layout.addLayout(bar)
+
+        # Bottom half — effects panel
+        self._effects_panel = ClipEffectsPanel(self._cm)
+        self._effects_panel.split_requested.connect(self.effects_split_requested)
+        self._effects_panel.popout_requested.connect(self.effects_popout_requested)
+        self._effects_panel.seek_requested.connect(self.clip_seek_requested)
+        self._vsplit.addWidget(self._effects_panel)
+
+        # Start with effects panel collapsed; expands when a clip is selected
+        self._vsplit.setSizes([600, 0])
+        self._vsplit.setCollapsible(1, True)
+
+    # ── Effects panel helpers ─────────────────────────────────────────────────
+    def _on_manager_selection_changed(self, ids: list):
+        """Update the effects panel when the selection changes."""
+        if ids:
+            clip = self._cm.get_by_id(ids[0])
+            self._effects_panel.set_clip(clip)
+            # Expand panel if it was collapsed
+            sizes = self._vsplit.sizes()
+            if sizes[1] < 20:
+                total = sizes[0] + sizes[1]
+                self._vsplit.setSizes([max(200, total - 420), 420])
+        else:
+            self._effects_panel.set_clip(None)
+            sizes = self._vsplit.sizes()
+            self._vsplit.setSizes([sizes[0] + sizes[1], 0])
+
+    def set_effects_source(self, source):
+        """Pass the video source path to the effects panel."""
+        self._effects_panel.set_source(source)
+
+    @property
+    def effects_panel(self) -> ClipEffectsPanel:
+        return self._effects_panel
 
     # ── Refresh table ─────────────────────────────────────────────────────────
     def _refresh(self):

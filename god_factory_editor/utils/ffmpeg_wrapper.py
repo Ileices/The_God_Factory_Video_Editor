@@ -263,6 +263,8 @@ class FFmpegWrapper:
                                  picture_gamma: float = 1.0,
                                  picture_sharpen: float = 0.0,
                                  crf: int = 18,
+                                 video_codec: str = "auto",
+                                 speed_preset: str = "p4",
                                  resolution: Optional[List[int]] = None) -> bool:
         """
         Re-encode a clip with optional speed change, audio filters, and resolution.
@@ -342,13 +344,29 @@ class FFmpegWrapper:
                 "-movflags", "+faststart",
                 "-c:v", vcodec,
             ]
-            args += self.hardware_encode_quality_args(vcodec, crf=crf, preset="p4")
+            args += self.hardware_encode_quality_args(vcodec, crf=crf, preset=speed_preset)
             if vf_final:
                 args += ["-vf", vf_final]
             if af:
                 args += ["-af", af]
             args.append(str(output))
             return args
+
+        # Forced software-lossless path for archive re-encode.
+        if video_codec == "libx264" and crf <= 1:
+            args = _build_args("libx264", use_hwdecode=False)
+            ok, _, _ = self.run(args, timeout=3600)
+            return ok
+
+        # If caller requested a specific codec, try it directly first.
+        if video_codec and video_codec not in ("auto", "copy"):
+            args = _build_args(video_codec, use_hwdecode=(video_codec != "libx264"))
+            ok, _, _ = self.run(args, timeout=3600)
+            if ok:
+                return True
+            log.warning(
+                f"Requested codec '{video_codec}' failed for effects export; falling back to automatic encoder selection."
+            )
 
         return self._run_h264_with_fallback(
             build_args=_build_args,
@@ -360,7 +378,9 @@ class FFmpegWrapper:
     def export_clips_concat(self,
                             segments: List[dict],
                             output: Path,
-                            crf: int = 18) -> bool:
+                            crf: int = 18,
+                            video_codec: str = "auto",
+                            speed_preset: str = "p4") -> bool:
         """
         Concatenate pre-exported segments with optional xfade transitions.
 
@@ -467,7 +487,7 @@ class FFmpegWrapper:
                 "-map", map_v,
                 "-c:v", vcodec,
             ]
-            args += self.hardware_encode_quality_args(vcodec, crf=crf, preset="p4")
+            args += self.hardware_encode_quality_args(vcodec, crf=crf, preset=speed_preset)
             if can_xfade_audio:
                 args += [
                     "-map", out_a,
@@ -478,6 +498,22 @@ class FFmpegWrapper:
                 args += ["-an"]
             args += ["-movflags", "+faststart", str(output)]
             return args
+
+        # Forced software-lossless path for archive concat export.
+        if video_codec == "libx264" and crf <= 1:
+            args = _build_args("libx264", use_hwdecode=False)
+            ok, _, _ = self.run(args, timeout=7200)
+            return ok
+
+        # If a specific codec is requested, try it first then fall back.
+        if video_codec and video_codec not in ("auto", "copy"):
+            args = _build_args(video_codec, use_hwdecode=(video_codec != "libx264"))
+            ok, _, _ = self.run(args, timeout=7200)
+            if ok:
+                return True
+            log.warning(
+                f"Requested codec '{video_codec}' failed for concat export; falling back to automatic encoder selection."
+            )
 
         return self._run_h264_with_fallback(
             build_args=_build_args,
